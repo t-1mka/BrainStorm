@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: brainstorm
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --worker-class eventlet -w 1 wsgi:application --bind 0.0.0.0:$PORT
+    envVars:
+      - key: GIGACHAT_CREDENTIALS
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: PYTHON_VERSION
+        value: 3.11.0
