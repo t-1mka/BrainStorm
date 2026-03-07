@@ -1,12 +1,30 @@
-.env
-venv/
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 *.pyd
-.Python
+venv/
+.venv/
+env/
 *.egg-info/
-dist/
-build/
+
+# Настройки (содержат секреты!)
+.env
+
+# Логи
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
 .DS_Store
 Thumbs.db
+
+# Render / деплой
+.render/
+data/
+*.db
