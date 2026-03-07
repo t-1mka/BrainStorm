@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-import os, sys, subprocess, logging, socket as _socket
+"""
+BrainStorm — точка запуска для локальной разработки.
+Запуск: python run.py
+"""
 
+import os, sys, logging
+
+# ── Кодировка ─────────────────────────────────────────────
 os.environ["PYTHONUTF8"] = "1"
 os.environ["PYTHONIOENCODING"] = "utf-8"
-os.environ.setdefault("LANG", "C.UTF-8")
-os.environ.setdefault("LC_ALL", "C.UTF-8")
 for s in (sys.stdout, sys.stderr):
     if hasattr(s, "reconfigure"):
         try: s.reconfigure(encoding="utf-8", errors="replace")
@@ -14,75 +18,83 @@ for s in (sys.stdout, sys.stderr):
 if sys.version_info < (3, 10):
     print("Нужен Python 3.10+"); sys.exit(1)
 
-req = os.path.join(os.path.dirname(__file__), "requirements.txt")
-print("Проверяю зависимости...")
-subprocess.check_call(
-    [sys.executable, "-m", "pip", "install", "-r", req, "-q"],
-    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-)
-print("Зависимости OK")
+# ── Загружаем .env ─────────────────────────────────────────
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+env_path = os.path.join(BASE_DIR, ".env")
+example  = os.path.join(BASE_DIR, ".env.example")
 
-env_f = os.path.join(os.path.dirname(__file__), ".env")
-ex_f  = os.path.join(os.path.dirname(__file__), ".env.example")
-if not os.path.exists(env_f) and os.path.exists(ex_f):
-    import shutil; shutil.copy(ex_f, env_f)
-    print("Создан .env — добавь GIGACHAT_CREDENTIALS!")
+if not os.path.exists(env_path):
+    if os.path.exists(example):
+        import shutil; shutil.copy(example, env_path)
+        print("Создан .env из шаблона.")
 
-from dotenv import load_dotenv
-load_dotenv(override=False)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(env_path, override=False)
+except ImportError:
+    import subprocess
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "python-dotenv", "-q"])
+    from dotenv import load_dotenv
+    load_dotenv(env_path, override=False)
 
-log_level_name = os.getenv("LOG_LEVEL", "INFO").upper()
-log_level = getattr(logging, log_level_name, logging.INFO)
+# ── Устанавливаем зависимости ──────────────────────────────
+req_file = os.path.join(BASE_DIR, "requirements.txt")
+if os.path.exists(req_file):
+    import subprocess
+    print("Проверяю зависимости...")
+    r = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "-r", req_file, "-q", "--disable-pip-version-check"],
+        capture_output=True, text=True
+    )
+    if r.returncode != 0:
+        print("Ошибка:", r.stderr[:300]); sys.exit(1)
+    print("Зависимости OK")
 
+# ── Логирование ────────────────────────────────────────────
+log_level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
 logging.basicConfig(
     level=log_level,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    format="%(asctime)s [%(levelname)-5s] %(name)s: %(message)s",
     datefmt="%H:%M:%S",
     handlers=[logging.StreamHandler(sys.stdout)],
 )
-logging.getLogger("engineio").setLevel(logging.WARNING)
-logging.getLogger("socketio").setLevel(logging.WARNING)
-logging.getLogger("urllib3").setLevel(logging.WARNING)
+for q in ("engineio", "socketio", "urllib3", "werkzeug"):
+    logging.getLogger(q).setLevel(logging.WARNING)
 
-def get_local_ip() -> str:
+# ── Запуск ─────────────────────────────────────────────────
+import socket as _socket
+
+def get_local_ip():
     try:
         s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        return "127.0.0.1"
+        s.connect(("8.8.8.8", 80)); ip = s.getsockname()[0]; s.close(); return ip
+    except: return "127.0.0.1"
 
 from app import create_app, socketio
 from app.ai_client import active_backend
 
-application = create_app()
-host     = os.getenv("HOST", "0.0.0.0")
-port     = int(os.getenv("PORT", 5000))
-debug    = os.getenv("DEBUG", "false").lower() == "true"
-local_ip = get_local_ip()
-ai_info  = active_backend()
+app     = create_app()
+host    = os.getenv("HOST", "0.0.0.0")
+port    = int(os.getenv("PORT", 5000))
+debug   = os.getenv("DEBUG", "false").lower() == "true"
+ip      = get_local_ip()
+ai_info = active_backend()
+creds   = os.getenv("GIGACHAT_CREDENTIALS", "")
 
-W = 48  # ширина содержимого рамки
+print()
+print("+--------------------------------------------------+")
+print("|  MOZGOVOY SHTURM  -  server started!            |")
+print("+--------------------------------------------------+")
+print("|  Local:   http://localhost:" + str(port) + "                  |")
+print("|  Network: http://" + ip + ":" + str(port) + "              |")
+print("+--------------------------------------------------+")
+print("|  AI: " + ai_info[:44] + (" " * max(0, 44 - len(ai_info))) + "  |")
+if not creds:
+    print("|  WARNING: GIGACHAT_CREDENTIALS not set!          |")
+    print("|  Using fallback question bank                    |")
+print("+--------------------------------------------------+")
+print("|  Ctrl+C to stop                                  |")
+print("+--------------------------------------------------+")
+print()
 
-def row(text=""):
-    visual = sum(2 if ord(c) > 0x2E7F else 1 for c in text)
-    pad = W - visual
-    return f"  {text}{' ' * max(pad, 0)}"
-
-print("")
-print("+" + "-" * (W + 2) + "+")
-print("|" + row("  BrainStorm  —  сервер запущен!") + "|")
-print("+" + "-" * (W + 2) + "+")
-print("|" + row(f"  Локально:  http://localhost:{port}") + "|")
-print("|" + row(f"  По сети:   http://{local_ip}:{port}") + "|")
-print("+" + "-" * (W + 2) + "+")
-print("|" + row(f"  AI:    {ai_info}") + "|")
-print("|" + row(f"  Логи:  {log_level_name}  (LOG_LEVEL=DEBUG для подробностей)") + "|")
-print("+" + "-" * (W + 2) + "+")
-print("|" + row("  Ctrl+C — остановить") + "|")
-print("+" + "-" * (W + 2) + "+")
-print("")
-
-socketio.run(application, host=host, port=port, debug=debug, allow_unsafe_werkzeug=True)
+socketio.run(app, host=host, port=port, debug=debug, allow_unsafe_werkzeug=True)
