@@ -1,4 +1,4 @@
-/* BrainStorm game.js v5 — полная версия */
+/* BrainStorm game.js v6 — полная версия */
 "use strict";
 
 /* ── Helpers ── */
@@ -9,12 +9,53 @@ const on = (el, ev, fn) => el && el.addEventListener(ev, fn);
 
 let socket;
 window.addEventListener("DOMContentLoaded", () => {
+  _initDuplicateTabGuard();
   socket = io();
   initSocket();
   initUI();
-  // После инициализации пробуем восстановить сессию
   setTimeout(_tryRejoin, 400);
 });
+
+/* ══ DUPLICATE TAB GUARD ══ */
+const _TAB_KEY = "bs_active_tab";
+const _TAB_ID  = Math.random().toString(36).slice(2);
+let _isDuplicate = false;
+
+function _initDuplicateTabGuard() {
+  // Объявляем себя активной вкладкой
+  try { localStorage.setItem(_TAB_KEY, _TAB_ID); } catch(_) {}
+
+  // Слушаем когда другая вкладка объявляет себя активной
+  window.addEventListener("storage", e => {
+    if (e.key !== _TAB_KEY) return;
+    if (e.newValue && e.newValue !== _TAB_ID) {
+      // Другая вкладка активна — показываем предупреждение только если мы в комнате
+      if (roomCode) _showDuplicateWarning();
+    }
+  });
+
+  // Кнопка «Использовать эту вкладку»
+  on($("duplicate-take-over"), "click", () => {
+    try { localStorage.setItem(_TAB_KEY, _TAB_ID); } catch(_) {}
+    _isDuplicate = false;
+    const ov = $("duplicate-tab-overlay");
+    if (ov) ov.style.display = "none";
+  });
+
+  // Перед закрытием — освобождаем слот
+  window.addEventListener("beforeunload", () => {
+    try {
+      if (localStorage.getItem(_TAB_KEY) === _TAB_ID)
+        localStorage.removeItem(_TAB_KEY);
+    } catch(_) {}
+  });
+}
+
+function _showDuplicateWarning() {
+  _isDuplicate = true;
+  const ov = $("duplicate-tab-overlay");
+  if (ov) ov.style.display = "flex";
+}
 
 /* ══ REJOIN — восстановление сессии после перезагрузки ══ */
 function _saveSession(code, name) {
@@ -73,7 +114,6 @@ const RT_FACTS = [
 let cheatSeeAnswer  = localStorage.getItem("c_see")    === "1";
 let cheatEditScores = localStorage.getItem("c_scores")  === "1";
 let cheatInfLives   = false;
-let cheatInstant    = false;
 let cheatInvisible  = false;
 
 /* ── Sound prefs ── */
@@ -97,26 +137,111 @@ let profile = JSON.parse(localStorage.getItem("bs_profile") || "null") || {
 /* ── Theme init ── */
 (function(){ document.body.className = localStorage.getItem("bs_theme") || "dark"; })();
 
-/* ════════════ PARTICLES ════════════ */
-(function(){
-  const cv = $("particles-canvas"); if(!cv) return;
-  const ctx = cv.getContext("2d"); let W, H, ps = [];
-  const resize = () => { W = cv.width = window.innerWidth; H = cv.height = window.innerHeight; };
-  const make   = () => ({x:Math.random()*W,y:Math.random()*H,r:Math.random()*1.5+.5,vx:(Math.random()-.5)*.4,vy:(Math.random()-.5)*.4,a:Math.random()});
-  const draw   = () => {
-    if(!particlesOn){ ctx.clearRect(0,0,W,H); requestAnimationFrame(draw); return; }
+/* ════════════ NEURAL NETWORK BACKGROUND ════════════ */
+const NeuralBg = (function(){
+  const cv  = document.getElementById("neural-canvas");
+  if(!cv) return { pulse:()=>{} };
+  const ctx = cv.getContext("2d");
+  let W, H, nodes=[], raf;
+
+  // Цвета нейронов
+  const COL_NODE  = "rgba(139,92,246,";
+  const COL_LINE  = "rgba(139,92,246,";
+  const LINK_DIST = 130;
+  const NODE_CNT  = 55;
+
+  function makeNode(){
+    return {
+      x:  Math.random()*W,
+      y:  Math.random()*H,
+      vx: (Math.random()-.5)*.35,
+      vy: (Math.random()-.5)*.35,
+      r:  Math.random()*1.4+.6,
+      a:  Math.random()*.7+.3,
+      pulse: 0   // 0..1, затухающая вспышка
+    };
+  }
+
+  function resize(){
+    W = cv.width  = window.innerWidth;
+    H = cv.height = window.innerHeight;
+  }
+
+  function draw(){
+    if(!particlesOn){ ctx.clearRect(0,0,W,H); raf=requestAnimationFrame(draw); return; }
     ctx.clearRect(0,0,W,H);
-    for(const p of ps){
-      p.x+=p.vx; p.y+=p.vy;
-      if(p.x<0)p.x=W; if(p.x>W)p.x=0; if(p.y<0)p.y=H; if(p.y>H)p.y=0;
-      ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
-      ctx.fillStyle=`rgba(139,92,246,${p.a*.6})`; ctx.fill();
+
+    // Обновляем позиции
+    for(const n of nodes){
+      n.x+=n.vx; n.y+=n.vy;
+      if(n.x<0)n.x=W; if(n.x>W)n.x=0;
+      if(n.y<0)n.y=H; if(n.y>H)n.y=0;
+      if(n.pulse>0) n.pulse=Math.max(0,n.pulse-.025);
     }
-    requestAnimationFrame(draw);
-  };
-  resize(); window.addEventListener("resize", resize);
-  for(let i=0;i<60;i++) ps.push(make());
-  draw();
+
+    // Рисуем связи
+    for(let i=0;i<nodes.length;i++){
+      const a=nodes[i];
+      for(let j=i+1;j<nodes.length;j++){
+        const b=nodes[j];
+        const dx=a.x-b.x, dy=a.y-b.y;
+        const dist=Math.sqrt(dx*dx+dy*dy);
+        if(dist>LINK_DIST) continue;
+        const t  = 1-dist/LINK_DIST;
+        const glow = Math.max(a.pulse, b.pulse);
+        let alpha  = t*.18 + glow*.45;
+        ctx.strokeStyle = COL_LINE+alpha+")";
+        ctx.lineWidth   = t*.8 + glow*1.2;
+        ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke();
+      }
+    }
+
+    // Рисуем узлы
+    for(const n of nodes){
+      const glow = n.pulse;
+      if(glow>0.05){
+        ctx.beginPath(); ctx.arc(n.x,n.y,n.r+glow*8,0,Math.PI*2);
+        ctx.fillStyle=COL_NODE+(glow*.25)+")"; ctx.fill();
+      }
+      ctx.beginPath(); ctx.arc(n.x,n.y,n.r+glow*2,0,Math.PI*2);
+      ctx.fillStyle=COL_NODE+(n.a*.7+glow*.3)+")"; ctx.fill();
+    }
+
+    raf=requestAnimationFrame(draw);
+  }
+
+  function pulse(color="#8b5cf6", intensity=1.0){
+    // Активируем случайный кластер узлов
+    const count = Math.floor(5+Math.random()*8);
+    const chosen = nodes.slice().sort(()=>Math.random()-.5).slice(0,count);
+    chosen.forEach((n,i)=>{
+      setTimeout(()=>{
+        n.pulse = Math.min(1, intensity);
+        // Распространяем на соседей
+        for(const nb of nodes){
+          const dx=n.x-nb.x,dy=n.y-nb.y;
+          if(Math.sqrt(dx*dx+dy*dy)<LINK_DIST*1.2)
+            setTimeout(()=>{ nb.pulse=Math.min(nb.pulse,intensity*.5); },80);
+        }
+      }, i*60);
+    });
+    // DOM-кольцо в случайной точке
+    if(chosen.length){
+      const n0=chosen[0];
+      const ring=document.createElement("div");
+      ring.className="event-ring";
+      const sz=40; ring.style.cssText=`width:${sz}px;height:${sz}px;left:${n0.x-sz/2}px;top:${n0.y-sz/2}px;border:2px solid ${color};`;
+      document.body.appendChild(ring);
+      setTimeout(()=>ring.remove(),850);
+    }
+  }
+
+  resize();
+  window.addEventListener("resize", resize);
+  for(let i=0;i<NODE_CNT;i++) nodes.push(makeNode());
+  raf=requestAnimationFrame(draw);
+
+  return { pulse };
 })();
 
 /* ════════════ SOUND ════════════ */
@@ -152,10 +277,6 @@ const Sounds = {
   kick:       ()=>{ if(!eventSoundOn)return; playTone(200,.3,"sawtooth",.18); },
   rename:     ()=>{ if(!eventSoundOn)return; playTone(900,.08,"triangle",.1); },
   eliminate:  ()=>{ if(!eventSoundOn)return; playTone(200,.35,"sawtooth",.2); },
-  rps_win:    ()=>{ playTone(784,.12); setTimeout(()=>playTone(988,.15),130); setTimeout(()=>playTone(1174,.18),260); },
-  rps_lose:   ()=>{ playTone(330,.15,"sawtooth",.12); setTimeout(()=>playTone(220,.2,"sawtooth",.1),140); },
-  rps_draw:   ()=>{ playTone(523,.1); setTimeout(()=>playTone(523,.12),200); },
-  rps_click:  ()=>{ if(!eventSoundOn)return; playTone(660,.06,"triangle",.1); },
   chat_msg:   ()=>{ if(!eventSoundOn)return; playTone(880,.05,"sine",.06); },
   si_buzz:    ()=>{ playTone(1200,.12,"triangle",.2); },
   si_correct: ()=>{ [523,659,784,1046].forEach((f,i)=>setTimeout(()=>playTone(f,.15),i*100)); },
@@ -396,6 +517,7 @@ function initUI(){
   qsa(".react-btn").forEach(b=>b.onclick=()=>socket.emit("reaction",{emoji:b.dataset.emoji}));
 
   /* Results */
+  on($("btn-continue-squad"), "click", ()=>{ socket.emit("restart_room",{keep_scores:false,same_squad:true}); });
   on($("btn-restart"),   "click", ()=>socket.emit("restart_room",{keep_scores:false}));
   on($("btn-tournament"),"click", ()=>socket.emit("restart_room",{keep_scores:true}));
   on($("btn-again"),     "click", ()=>{ transitionTo("view-main","🏠"); resetLobbyUI(); });
@@ -410,8 +532,6 @@ function initUI(){
   /* Admin */
   initAdminUI();
 
-  /* RPS */
-  initBowling();
   initBgAnimations();
 
   /* Своя игра */
@@ -482,23 +602,41 @@ function initCheatMenu(nick){
     if($("cheat-score-btns")) $("cheat-score-btns").style.display=v?"":"none";
   });
   if($("cheat-score-btns")) $("cheat-score-btns").style.display=cheatEditScores?"":"none";
-  makeToggle($("cheat-infinite-lives"),  false, v=>{ cheatInfLives=v;  socket.emit("cheat_set_infinite_lives",{enabled:v});  toast(v?"♾️ Бесконечные жизни вкл":"♾️ выкл"); });
-  makeToggle($("cheat-instant-answer"),  false, v=>{ cheatInstant=v;   socket.emit("cheat_set_instant_answer",{enabled:v});  toast(v?"⚡ Мгновенный ответ вкл":"⚡ выкл"); });
-  makeToggle($("cheat-invisible"),       false, v=>{ cheatInvisible=v; socket.emit("cheat_set_invisible",{enabled:v});       toast(v?"👻 Невидимка вкл":"👻 выкл"); });
-  makeToggle($("cheat-free-rephrase"),   false, v=>{ cheatFreeRephrase=v; toast(v?"🔄 Бесплатные перефразировки вкл":"🔄 выкл"); });
 
-  makeToggle($("cheat-presentation-local"), false, v=>{
-    presentationOn = v;
-    if($("presentation-overlay")) $("presentation-overlay").style.display = v?"flex":"none";
-    if($("btn-pres-toggle")) $("btn-pres-toggle").textContent = v?"❌":"📺";
-  });
+  makeToggle($("cheat-infinite-lives"), false, v=>{ cheatInfLives=v; socket.emit("cheat_set_infinite_lives",{enabled:v}); toast(v?"♾️ Бесконечные жизни вкл":"♾️ выкл"); });
+  makeToggle($("cheat-invisible"),      false, v=>{ cheatInvisible=v; socket.emit("cheat_set_invisible",{enabled:v}); toast(v?"👻 Невидимка вкл":"👻 выкл"); });
+  makeToggle($("cheat-free-rephrase"),  false, v=>{ cheatFreeRephrase=v; toast(v?"🔄 Бесплатные перефразировки вкл":"🔄 выкл"); });
+
   makeToggle($("cheat-presentation-global"), false, v=>{
-    socket.emit("cheat_set_presentation",{enabled:v});
+    socket.emit("set_presentation_mode",{enabled:v});
     toast(v?"📡 Презентация вкл для всех":"📡 выкл");
   });
 
+  // ── Новые читы ──
+  on($("cheat-skip-btn"),"click",()=>{
+    if(!isTester)return;
+    socket.emit("cheat_skip_question",{});
+    toast("⏭️ Вопрос пропущен");
+    NeuralBg.pulse("#fbbf24",0.9);
+  });
+  on($("cheat-set-lives-btn"),"click",()=>{
+    if(!isTester)return;
+    const name=($("cheat-lives-player").value||"").trim();
+    const lives=parseInt($("cheat-lives-count").value||"3",10);
+    if(!name){toast("⚠️ Введи ник");return;}
+    socket.emit("cheat_set_lives",{name,lives});
+  });
+  on($("cheat-add-score-all-btn"),"click",()=>{
+    if(!isTester)return;
+    const amount=parseInt($("cheat-add-score-amount").value||"100",10);
+    socket.emit("cheat_add_score_all",{amount});
+    toast(`💰 +${amount} всем`);
+    NeuralBg.pulse("#34d399",0.8);
+  });
+
+  // Существующие действия
   on($("cheat-force-start-btn"),"click",()=>{ if(!isTester)return; socket.emit("cheat_force_start",{}); toast("🚀 Принудительный старт..."); });
-  on($("cheat-teleport-btn"),   "click",()=>{
+  on($("cheat-teleport-btn"),"click",()=>{
     if(!isTester)return;
     const code=($("cheat-room-code").value||"").trim().toUpperCase();
     if(!code){ toast("⚠️ Введите код"); return; }
@@ -515,14 +653,6 @@ function initCheatMenu(nick){
     const nick=($("cheat-global-reset-nick").value||"").trim(); if(!nick){toast("⚠️ Ник?");return;}
     if(!confirm(`Сбросить статистику ${nick}?`))return;
     socket.emit("cheat_reset_global_stats",{username:nick});
-  });
-  on($("cheat-spoof-send-btn"),"click",()=>{
-    if(!isTester)return;
-    const spoof=($("cheat-spoof-name").value||"").trim();
-    const text=($("cheat-spoof-text").value||"").trim();
-    if(!text){toast("⚠️ Текст?");return;}
-    socket.emit("chat_message",{text, spoof_name:spoof||undefined});
-    $("cheat-spoof-text").value="";
   });
 }
 
@@ -552,7 +682,11 @@ function initAdminUI(){
     else $("admin-key-error").style.display="";
   });
   on($("btn-admin-logout"),"click",()=>{ isAdmin=false; $("admin-key-section").style.display=""; $("admin-panel-section").style.display="none"; $("admin-key-input").value=""; });
-  on($("btn-admin-refresh"),"click",loadAdminRooms);
+  on($("btn-admin-refresh"),  "click", loadAdminRooms);
+  on($("btn-admin-cleanup"), "click", async()=>{
+    const d=await fetch("/api/admin/reset_server",{method:"POST"}).then(r=>r.json()).catch(()=>({}));
+    toast(d.ok?`🧹 Удалено комнат: ${d.removed_rooms||0}`:"❌ Ошибка"); loadAdminRooms();
+  });
   on($("admin-user-search-btn"),"click",loadAdminUsers);
   on($("admin-bans-refresh-btn"),"click",loadAdminBans);
   on($("admin-history-btn"),"click",()=>{ const c=($("admin-history-code").value||"").trim().toUpperCase(); if(c)loadAdminHistory(c); });
@@ -598,6 +732,7 @@ async function loadAdminRooms(){
           <span class="public-room-code">${r.code}</span>
           <span class="public-room-info">${r.mode}·${r.state}${r.is_sandbox?' 🏖':''}${r.is_public?' 🌐':''}</span>
           <span class="public-room-cnt">👥${r.players}</span>
+          ${r.idle_secs>60?`<span style="font-size:.72rem;color:var(--red)">⏳${Math.round(r.idle_secs/60)}м</span>`:''}
         </div>
         <div style="font-size:.78rem;color:var(--text-muted)">Хост: ${r.host||"—"} · ${r.topic||"—"}</div>
         <div style="display:flex;gap:5px;flex-wrap:wrap">
@@ -705,8 +840,205 @@ function resetLobbyUI(){
   if($("team-board")) $("team-board").style.display="none";
   if($("presentation-overlay")) $("presentation-overlay").style.display="none";
   if($("chat-messages")) $("chat-messages").innerHTML="";
-  stopCheatStats();
+  stopCheatStats(); _stopWaitingTips();
 }
+
+/* ── Советы во время ожидания ── */
+const LOBBY_TIPS = [
+  "💡 Самый быстрый правильный ответ получает бонусные очки за скорость!",
+  "🔥 3 правильных ответа подряд активируют стриковый бонус!",
+  "🃏 Джокер убирает два неверных варианта — стоит 100 очков.",
+  "💭 Подсказка от AI стоит 75 очков. Используй мудро!",
+  "🔄 Перефразировка вопроса поможет, если формулировка непонятна.",
+  "🧠 Адаптивная сложность подстраивается под процент верных ответов.",
+  "⭐ Бонус-вопросы попадаются случайно — они дают двойные очки!",
+  "👻 В режиме «Невидимка» тебя не видят другие игроки.",
+  "🏆 В режиме «Кооп» все получают одинаковые очки за правильный ответ.",
+  "❤️ В режиме «На вылет» три ошибки — и ты выбываешь!",
+];
+let _tipTimer = null, _tipIdx = 0;
+function _startWaitingTips(){
+  _stopWaitingTips();
+  _tipIdx = Math.floor(Math.random() * LOBBY_TIPS.length);
+  function showTip(){
+    const el = $("waiting-tip"); if(!el) return;
+    el.style.opacity="0";
+    setTimeout(()=>{ el.textContent=LOBBY_TIPS[_tipIdx % LOBBY_TIPS.length]; el.style.opacity="1"; _tipIdx++; },300);
+  }
+  showTip();
+  _tipTimer = setInterval(showTip, 6000);
+}
+function _stopWaitingTips(){ if(_tipTimer){ clearInterval(_tipTimer); _tipTimer=null; } }
+
+/* ════════════ 🧠 BRAIN REFLEX MINI-GAME ════════════ */
+(function(){
+  let W=340, H=180, ctx, nodes=[], active=[], pts=0, streak=0, best=0;
+  let gameRunning=false, spawnTimer=null, countdownTimer=null, timeLeft=30;
+
+  const COLORS = ["#8b5cf6","#c084fc","#34d399","#fbbf24","#f472b6","#60a5fa"];
+  const MAX_NODES = 7;
+
+  function init(){
+    const cv=$("reflex-canvas"); if(!cv) return;
+    ctx=cv.getContext("2d");
+    const rect=cv.getBoundingClientRect();
+    W=rect.width||340; H=cv.offsetHeight||180;
+    cv.width=Math.round(W*window.devicePixelRatio||1);
+    cv.height=Math.round(H*window.devicePixelRatio||1);
+    ctx.scale(window.devicePixelRatio||1, window.devicePixelRatio||1);
+    cv.addEventListener("click",  e=>_onTap(e.offsetX, e.offsetY));
+    cv.addEventListener("touchend",e=>{ e.preventDefault(); const t=e.changedTouches[0]; const r=cv.getBoundingClientRect(); _onTap(t.clientX-r.left, t.clientY-r.top); },{passive:false});
+    on($("reflex-start-btn"),"click", startGame);
+    _drawIdle();
+  }
+
+  function startGame(){
+    if(gameRunning) return;
+    gameRunning=true; pts=0; streak=0; timeLeft=30; active=[];
+    const btn=$("reflex-start-btn"); if(btn) btn.textContent="⏱ "+timeLeft+"s";
+    _updateUI();
+    // Спавн нейрона каждые 900 мс
+    spawnTimer = setInterval(()=>{
+      if(active.length < MAX_NODES) _spawnNode();
+      _tick();
+    }, 900);
+    // Обратный отсчёт
+    countdownTimer = setInterval(()=>{
+      timeLeft--;
+      const btn=$("reflex-start-btn"); if(btn) btn.textContent="⏱ "+timeLeft+"s";
+      if(timeLeft<=0) endGame();
+    }, 1000);
+    requestAnimationFrame(_loop);
+  }
+
+  function endGame(){
+    gameRunning=false;
+    clearInterval(spawnTimer); clearInterval(countdownTimer);
+    if(pts > best){ best=pts; if($("reflex-best"))$("reflex-best").textContent=best; }
+    const btn=$("reflex-start-btn"); if(btn) btn.textContent="▶ Ещё раз!";
+    // Flash message
+    toast(`🧠 Игра окончена! Очков: ${pts}`, 2500);
+    NeuralBg.pulse("#fbbf24",1.0);
+  }
+
+  function _spawnNode(){
+    const margin=30;
+    active.push({
+      x: margin + Math.random()*(W-margin*2),
+      y: margin + Math.random()*(H-margin*2),
+      r: 16+Math.random()*10,
+      color: COLORS[Math.floor(Math.random()*COLORS.length)],
+      life: 1.0,   // 1→0 за 2.5 сек
+      decay: 0.012 + Math.random()*0.008,
+      pulse: 0,
+    });
+  }
+
+  function _tick(){
+    active = active.filter(n => n.life > 0);
+    active.forEach(n => { n.life -= n.decay; n.pulse = (n.pulse+0.12)%(Math.PI*2); });
+  }
+
+  function _onTap(x, y){
+    if(!gameRunning) return;
+    let hit=false;
+    for(let i=active.length-1;i>=0;i--){
+      const n=active[i];
+      const d=Math.hypot(x-n.x, y-n.y);
+      if(d < n.r+4){
+        active.splice(i,1);
+        // Score = base + speed bonus (faster click on fresh neuron = more pts)
+        const bonus = Math.floor(n.life*100);
+        const gained = 10 + bonus;
+        pts += gained; streak++;
+        _flashScore(x,y,"+"+gained);
+        if(streak>=5) { pts+=20; toast("🔥 Серия "+streak+"! +20",1200); NeuralBg.pulse("#fbbf24",0.7); }
+        hit=true; break;
+      }
+    }
+    if(!hit){ streak=0; _flashScore(x,y,"miss",true); }
+    _updateUI();
+  }
+
+  function _flashScore(x,y,text,miss=false){
+    const cv=$("reflex-canvas"); if(!cv) return;
+    // Draw a quick floating label via temporary DOM
+    const el=document.createElement("div");
+    const rect=cv.getBoundingClientRect();
+    el.style.cssText=`position:fixed;left:${rect.left+x}px;top:${rect.top+y-10}px;font-size:.85rem;font-weight:700;color:${miss?"#f87171":"#34d399"};pointer-events:none;z-index:999;transition:transform .6s,opacity .6s`;
+    el.textContent=text;
+    document.body.appendChild(el);
+    requestAnimationFrame(()=>{ el.style.transform="translateY(-30px)"; el.style.opacity="0"; });
+    setTimeout(()=>el.remove(),650);
+  }
+
+  function _updateUI(){
+    if($("reflex-pts"))    $("reflex-pts").textContent=pts;
+    if($("reflex-streak")) $("reflex-streak").textContent=streak;
+  }
+
+  let _raf;
+  function _loop(){
+    if(!gameRunning) return;
+    _draw();
+    _raf=requestAnimationFrame(_loop);
+  }
+
+  function _drawIdle(){
+    if(!ctx) return;
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle="rgba(139,92,246,0.08)"; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle="rgba(139,92,246,0.3)";
+    ctx.font="bold 13px var(--font-body,sans-serif)";
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText("Нажми ▶ Старт",W/2,H/2);
+  }
+
+  function _draw(){
+    if(!ctx) return;
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle="rgba(11,7,32,0.6)"; ctx.fillRect(0,0,W,H);
+
+    for(const n of active){
+      const alpha=n.life;
+      const glow=0.5+0.5*Math.sin(n.pulse);
+      // Outer glow
+      const g=ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,n.r*2);
+      g.addColorStop(0, n.color.replace(")",`,${alpha*0.5})`).replace("rgb","rgba"));
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.beginPath(); ctx.arc(n.x,n.y,n.r*2,0,Math.PI*2);
+      ctx.fillStyle=g; ctx.fill();
+      // Core circle
+      ctx.beginPath(); ctx.arc(n.x,n.y,n.r*(0.8+0.2*glow),0,Math.PI*2);
+      ctx.fillStyle=n.color+(Math.round(alpha*180).toString(16).padStart(2,"0"));
+      ctx.fill();
+      // Ring pulse
+      ctx.beginPath(); ctx.arc(n.x,n.y,n.r*(1+glow*.4),0,Math.PI*2);
+      ctx.strokeStyle=n.color+(Math.round(alpha*100).toString(16).padStart(2,"0"));
+      ctx.lineWidth=2; ctx.stroke();
+      // Life bar arc
+      ctx.beginPath();
+      ctx.arc(n.x,n.y,n.r+5,-Math.PI/2,-Math.PI/2+Math.PI*2*alpha);
+      ctx.strokeStyle=n.color; ctx.lineWidth=2.5; ctx.stroke();
+    }
+
+    // Timer bar at top
+    if(gameRunning){
+      const tw=(timeLeft/30)*W;
+      const tc=timeLeft>10?"#34d399":timeLeft>5?"#fbbf24":"#f87171";
+      ctx.fillStyle=tc+(Math.round(0.35*255).toString(16));
+      ctx.fillRect(0,0,tw,4);
+    }
+  }
+
+  // Инициализируем после загрузки DOM
+  if(document.readyState==="loading")
+    document.addEventListener("DOMContentLoaded",init);
+  else
+    setTimeout(init,100);
+})();
+
+
 
 function applyGuestSettings(s){
   if($("gs-topic")) $("gs-topic").textContent=s.topic||"—";
@@ -835,250 +1167,6 @@ function initBgAnimations(){
 }
 
 
-/* ════════════ 🎳 БОУЛИНГ ════════════ */
-function initBowling(){
-  const canvas=document.getElementById("bowling-canvas"); if(!canvas)return;
-  const ctx=canvas.getContext("2d");
-  const msg=document.getElementById("bowling-msg");
-  const strikesEl=document.getElementById("bowling-strikes");
-  const ptsEl=document.getElementById("bowling-pts");
-  const resetBtn=document.getElementById("bowling-reset");
-
-  let W=canvas.offsetWidth||340, H=200;
-  let strikes=0, totalPts=0;
-
-  // Состояние игры
-  let ball=null, pins=[], throwing=false, result="", aimX=W/2;
-  let dragStart=null, ballResting=true, animFrame=null;
-  let pinsKnockedAnim=[]; // для анимации падения кегль
-
-  const PIN_ROWS=[[{x:.5}],
-                  [{x:.44},{x:.56}],
-                  [{x:.38},{x:.50},{x:.62}]];
-  const BALL_START={x:.5, y:.82};
-  const BALL_R=14;
-  const PIN_R=8;
-  const LANE_COLOR="#1a1040";
-  const LANE_LINE="rgba(139,92,246,0.2)";
-
-  function lerp(a,b,t){return a+(b-a)*t;}
-
-  function initPins(){
-    pins=[];
-    PIN_ROWS.forEach((row,ri)=>{
-      row.forEach(p=>{
-        pins.push({
-          x:p.x*W, y:(0.15+ri*0.16)*H,
-          alive:true, vx:0, vy:0, angle:0, fallen:false,
-          letter:"G"
-        });
-      });
-    });
-  }
-
-  function initBall(){
-    ball={x:aimX, y:BALL_START.y*H, vx:0, vy:0, rolling:false, r:BALL_R};
-  }
-
-  function resetGame(){
-    if(animFrame){cancelAnimationFrame(animFrame);animFrame=null;}
-    throwing=false; ballResting=true; result="";
-    pinsKnockedAnim=[];
-    initPins(); initBall();
-    if(msg) msg.textContent="← Наведи и кликни чтобы бросить! →";
-    draw();
-  }
-
-  function drawLane(){
-    // Фон дорожки
-    ctx.fillStyle=LANE_COLOR;
-    ctx.fillRect(0,0,W,H);
-    // Линии дорожки
-    for(let i=1;i<5;i++){
-      ctx.beginPath(); ctx.strokeStyle=LANE_LINE; ctx.lineWidth=1;
-      ctx.moveTo(W*i/5, 0); ctx.lineTo(W*i/5, H);
-      ctx.stroke();
-    }
-    // Линия броска
-    ctx.beginPath(); ctx.strokeStyle="rgba(139,92,246,0.3)"; ctx.lineWidth=1.5; ctx.setLineDash([5,5]);
-    ctx.moveTo(0,BALL_START.y*H+20); ctx.lineTo(W,BALL_START.y*H+20);
-    ctx.stroke(); ctx.setLineDash([]);
-  }
-
-  function drawAimLine(){
-    if(!ballResting||throwing)return;
-    ctx.beginPath(); ctx.strokeStyle="rgba(139,92,246,0.35)"; ctx.lineWidth=1.5; ctx.setLineDash([4,4]);
-    ctx.moveTo(aimX, BALL_START.y*H);
-    // Прицел к ближайшей кегле
-    const target=pins.find(p=>p.alive);
-    if(target){ ctx.lineTo(target.x, target.y); }
-    else { ctx.lineTo(aimX, 30); }
-    ctx.stroke(); ctx.setLineDash([]);
-    // Кружок прицела
-    ctx.beginPath(); ctx.strokeStyle="rgba(139,92,246,0.5)"; ctx.lineWidth=1;
-    ctx.arc(aimX, BALL_START.y*H-4, 6, 0, Math.PI*2); ctx.stroke();
-  }
-
-  function drawPin(p){
-    if(p.fallen) return; // совсем упавшие не рисуем
-    ctx.save();
-    ctx.translate(p.x, p.y);
-    ctx.rotate(p.angle||0);
-    // Кегля
-    const grad=ctx.createRadialGradient(-PIN_R*.3,-PIN_R*.3,1,0,0,PIN_R);
-    grad.addColorStop(0,"#fff");
-    grad.addColorStop(0.5,"#e0d0ff");
-    grad.addColorStop(1,"#9068d0");
-    ctx.beginPath(); ctx.arc(0,0,PIN_R,0,Math.PI*2);
-    ctx.fillStyle=p.alive?"rgba(255,255,255,0.92)":"rgba(100,70,180,0.5)";
-    ctx.fill();
-    ctx.strokeStyle=p.alive?"rgba(139,92,246,0.8)":"rgba(139,92,246,0.3)";
-    ctx.lineWidth=1.5; ctx.stroke();
-    // Буква G
-    ctx.fillStyle=p.alive?"#8b5cf6":"rgba(139,92,246,0.4)";
-    ctx.font=`bold ${PIN_R}px var(--font-head,sans-serif)`;
-    ctx.textAlign="center"; ctx.textBaseline="middle";
-    ctx.fillText("G",0,0.5);
-    ctx.restore();
-  }
-
-  function drawBall(){
-    if(!ball)return;
-    const grad=ctx.createRadialGradient(ball.x-ball.r*.35, ball.y-ball.r*.35, 2, ball.x, ball.y, ball.r);
-    grad.addColorStop(0,"#93c5fd");
-    grad.addColorStop(0.5,"#3b82f6");
-    grad.addColorStop(1,"#1e3a8a");
-    ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
-    ctx.fillStyle=grad; ctx.fill();
-    ctx.strokeStyle="rgba(147,197,253,0.7)"; ctx.lineWidth=1.5; ctx.stroke();
-    // Блик
-    ctx.beginPath(); ctx.arc(ball.x-ball.r*.3, ball.y-ball.r*.3, ball.r*.28, 0, Math.PI*2);
-    ctx.fillStyle="rgba(255,255,255,0.45)"; ctx.fill();
-  }
-
-  function draw(){
-    ctx.clearRect(0,0,W,H);
-    drawLane();
-    drawAimLine();
-    pins.forEach(drawPin);
-    drawBall();
-  }
-
-  function throwBall(){
-    if(throwing||!ballResting)return;
-    const alive=pins.filter(p=>p.alive);
-    if(!alive.length){
-      result="🎳 Все сбиты! Новая игра!";
-      if(msg) msg.textContent=result; return;
-    }
-    // Вектор к центру кегль или первой живой
-    const cx=alive.reduce((s,p)=>s+p.x,0)/alive.length;
-    const cy=alive.reduce((s,p)=>s+p.y,0)/alive.length;
-    const dx=cx-ball.x, dy=cy-ball.y;
-    const len=Math.sqrt(dx*dx+dy*dy)||1;
-    const spd=7+Math.random()*3;
-    ball.vx=dx/len*spd*(0.85+Math.random()*.3);
-    ball.vy=dy/len*spd;
-    throwing=true; ballResting=false;
-    if(msg) msg.textContent="🔵 ...";
-    animate();
-  }
-
-  function checkCollisions(){
-    pins.forEach(p=>{
-      if(!p.alive)return;
-      const dx=ball.x-p.x, dy=ball.y-p.y;
-      const dist=Math.sqrt(dx*dx+dy*dy);
-      if(dist<BALL_R+PIN_R){
-        p.alive=false;
-        p.vx=(dx/dist)*6+Math.random()*4-2;
-        p.vy=(dy/dist)*4-2;
-        p.angle=(Math.random()-.5)*1.5;
-        pinsKnockedAnim.push({pin:p,frames:18});
-        Sounds.correct && Sounds.correct();
-      }
-    });
-  }
-
-  function animate(){
-    if(!throwing)return;
-    // Двигаем шар
-    ball.x+=ball.vx; ball.y+=ball.vy;
-    ball.vx*=0.99;
-    checkCollisions();
-    // Анимация падения кегль
-    pinsKnockedAnim=pinsKnockedAnim.filter(a=>{
-      a.pin.y+=a.pin.vy; a.pin.x+=a.pin.vx;
-      a.pin.angle+=0.15;
-      a.pin.vx*=0.85; a.pin.vy+=0.4;
-      a.frames--;
-      if(a.frames<=0) a.pin.fallen=true;
-      return a.frames>0;
-    });
-    draw();
-    // Шар ушёл за экран?
-    if(ball.y<-40||ball.x<-40||ball.x>W+40){
-      endThrow();
-    } else {
-      animFrame=requestAnimationFrame(animate);
-    }
-  }
-
-  function endThrow(){
-    throwing=false;
-    const knocked=pins.filter(p=>!p.alive).length;
-    const total=pins.length;
-    let pts=knocked*100;
-    if(knocked===total){
-      pts+=300; strikes++; result="🎳 СТРАЙК! +300 бонус!";
-      if(strikesEl) strikesEl.textContent=strikes;
-      fireMega && fireMega();
-    } else if(knocked===0){
-      result="😬 Мимо! Попробуй снова";
-    } else {
-      result=`✅ Сбито: ${knocked}/${total}`;
-    }
-    totalPts+=pts;
-    if(ptsEl) ptsEl.textContent=totalPts;
-    if(msg) msg.textContent=result+(pts>0?` +${pts}pts`:"");
-    // Перезапуск после 2с
-    setTimeout(()=>{
-      initBall(); ballResting=true; aimX=W/2;
-      const alive=pins.filter(p=>p.alive);
-      if(!alive.length){
-        if(msg) msg.textContent="🎉 Все кегли сбиты! Нажми «Новая игра»";
-      } else {
-        if(msg) msg.textContent="← Наведи и кликни! →";
-      }
-      draw();
-    },2000);
-  }
-
-  // Движение прицела
-  function updateAim(clientX){
-    const rect=canvas.getBoundingClientRect();
-    aimX=Math.max(BALL_R, Math.min(W-BALL_R, (clientX-rect.left)*(W/rect.width)));
-    if(ball && ballResting){ ball.x=aimX; }
-    draw();
-  }
-
-  canvas.addEventListener("mousemove", e=>{ if(!throwing&&ballResting) updateAim(e.clientX); });
-  canvas.addEventListener("click",     e=>{ updateAim(e.clientX); throwBall(); });
-  canvas.addEventListener("touchmove", e=>{ e.preventDefault(); updateAim(e.touches[0].clientX); },{passive:false});
-  canvas.addEventListener("touchend",  e=>{ e.preventDefault(); throwBall(); },{passive:false});
-  if(resetBtn) resetBtn.onclick=()=>{ strikes=0; totalPts=0; if(strikesEl)strikesEl.textContent=0; if(ptsEl)ptsEl.textContent=0; resetGame(); };
-
-  // Адаптив ширины
-  function resize(){
-    const r=canvas.getBoundingClientRect();
-    W=r.width||340;
-    canvas.width=W; canvas.height=H;
-    initPins(); initBall(); aimX=W/2; draw();
-  }
-  window.addEventListener("resize",()=>setTimeout(resize,100));
-  setTimeout(resize,50);
-  resetGame();
-}
 
 /* ════════════ LOADING FACTS ════════════ */
 const LOADING_FACTS=[
@@ -1087,7 +1175,6 @@ const LOADING_FACTS=[
   "🔥 Серия правильных ответов даёт стриковый бонус к очкам",
   "👻 Режим невидимки скрывает тебя от всех, кроме читера",
   "🃏 Джокер убирает два неверных варианта — стоит 100 очков",
-  "🎳 Страйк в боулинге даёт +300 бонусных очков!",
   "🧠 Вопросы генерируются нейросетью специально для вашей темы",
   "⚡ FFA-режим: только первый правильный ответ засчитывается!",
   "🌟 В кооп-режиме команда побеждает или проигрывает вместе",
@@ -1152,7 +1239,6 @@ function startTimer(secs){
   clearInterval(timerInterval); timerSec=secs;
   const el=$("g-timer"); const pEl=$("pres-timer"); if(!el)return;
   [el,pEl].forEach(e=>e&&(e.textContent=timerSec,e.className=e===el?"g-timer":"pres-timer"));
-  if(cheatInstant)return;
   timerInterval=setInterval(()=>{
     timerSec--; [el,pEl].forEach(e=>e&&(e.textContent=timerSec));
     if(timerSec<=5){ [el,pEl].forEach(e=>e&&(e.className+=" danger")); Sounds.timer_5(); }
@@ -1274,6 +1360,7 @@ function initSocket(){
     if($("teams-panel")) $("teams-panel").style.display="none";
     if($("sandbox-badge")) $("sandbox-badge").style.display=isSandbox?"":"none";
     if($("btn-chat-clear")) $("btn-chat-clear").style.display="";  // хост видит кнопку очистки
+    _startWaitingTips();
     transitionTo("view-lobby","🏠 Лобби");
   });
 
@@ -1445,8 +1532,8 @@ function initSocket(){
       // остальные варианты — без красного цвета!
     });
 
-    if(myAns?.correct){ fireConfetti(); Sounds.correct(); if((myAns.streak||0)>=3){toast(`🔥 Серия ${myAns.streak}!`);Sounds.streak();} }
-    else if(myAns) Sounds.wrong();
+    if(myAns?.correct){ fireConfetti(); Sounds.correct(); NeuralBg.pulse("#34d399",1.0); if((myAns.streak||0)>=3){toast(`🔥 Серия ${myAns.streak}!`);Sounds.streak();NeuralBg.pulse("#fbbf24",1.2);} }
+    else if(myAns) { Sounds.wrong(); NeuralBg.pulse("#f87171",0.8); }
 
     if($("g-status")) $("g-status").textContent=myAns?.correct?"✅ Правильно!":"❌ Неверно!";
     if($("question-result-panel"))$("question-result-panel").style.display="";
@@ -1463,9 +1550,14 @@ function initSocket(){
   socket.on("interim_results",data=>toast(`📊 Сложность: ${{easy:"Лёгкая",medium:"Средняя",hard:"Сложная"}[data.difficulty]||data.difficulty}`));
   socket.on("reaction_received",data=>{ const el=document.createElement("div");el.className="reaction-float";el.style.left=(20+Math.random()*60)+"%";el.style.bottom="80px";el.innerHTML=data.emoji;$("reactions-overlay")?.appendChild(el);setTimeout(()=>el.remove(),2000); });
 
-  socket.on("cheat_ack",data=>{ const m={infinite_lives:"♾️",instant_answer:"⚡",invisible:"👻",reset_player:"🗑",rename:"✏️",reset_global_stats:"🗑 БД",presentation_mode:"📺"}; toast(`${m[data.feature]||"✅"} ${data.enabled!==undefined?(data.enabled?"вкл":"выкл"):(data.ok?"ок":"ошибка")}`); });
+  socket.on("cheat_ack",data=>{ const m={infinite_lives:"♾️",invisible:"👻",reset_player:"🗑",rename:"✏️",reset_global_stats:"🗑 БД",presentation_mode:"📺",skip_question:"⏭️",set_lives:"❤️",add_score_all:"💰"}; toast(`${m[data.feature]||"✅"} ${data.enabled!==undefined?(data.enabled?"вкл":"выкл"):(data.ok?"ок":"ошибка")}`); });
   socket.on("cheat_player_reset",data=>toast(`🗑 Очки ${data.name} сброшены`));
   socket.on("cheat_score_updated",data=>{ if(data.sid===socket.id){myScore=data.score;if($("g-score"))$("g-score").textContent=myScore;} });
+  socket.on("lives_restored",data=>{ toast(`❤️ ${data.name}: ${data.lives} жизней`); });
+  socket.on("scores_updated",data=>{
+    const myS=data.scores?.[socket.id];
+    if(myS!==undefined){ myScore=myS; if($("g-score"))$("g-score").textContent=myScore; }
+  });
 
   /* СВОЯ ИГРА */
   socket.on("svoyaigra_select_turn",data=>{
@@ -1542,12 +1634,14 @@ function initSocket(){
   });
 
   socket.on("game_over",data=>{
-    stopTimer(); stopCheatStats(); _clearSession(); transitionTo("view-results","🏆");
+    stopTimer(); stopCheatStats();
+    // НЕ очищаем сессию — оставляем для повторной игры тем же составом
+    transitionTo("view-results","🏆");
     if(data.admin_terminated) toast("⛔ Игра завершена администратором",4000);
     const myRes=data.players?.find(p=>p.name===profile.name);
     if(myRes){
       profile.games++; profile.totalScore+=myRes.score||0; profile.xp+=Math.floor((myRes.score||0)/10)+5;
-      if(myRes.rank===1){profile.wins++;fireMega();Sounds.win();}else Sounds.correct();
+      if(myRes.rank===1){profile.wins++;fireMega();Sounds.win();NeuralBg.pulse("#fbbf24",1.5);}else{Sounds.correct();NeuralBg.pulse("#8b5cf6",0.7);}
       profile.history=profile.history||[];
       profile.history.push({date:new Date().toLocaleDateString("ru-RU"),topic:"Игра",score:myRes.score||0,mode:data.mode||"classic"});
       if(profile.history.length>50) profile.history=profile.history.slice(-50);
@@ -1560,8 +1654,11 @@ function initSocket(){
       if(data.mode==="team"&&data.winner_team&&data.team_names){banner.style.display="";banner.textContent=`🏆 Победа: ${data.team_names[data.winner_team]||"Команда "+data.winner_team}!`;}
       else if(data.players?.[0]){banner.style.display="";banner.textContent=data.mode==="coop"?`🌟 Команда: ${data.players.reduce((s,p)=>s+p.score,0)} очков!`:`🥇 ${data.players[0].name} — ${data.players[0].score} очков!`;}
     }
-    if($("btn-restart"))    $("btn-restart").style.display=isHost?"":"none";
-    if($("btn-tournament")) $("btn-tournament").style.display=isHost?"":"none";
+    // Забавная статистика раунда
+    _renderFunStats(data);
+    if($("btn-restart"))         $("btn-restart").style.display=isHost?"":"none";
+    if($("btn-tournament"))      $("btn-tournament").style.display=isHost?"":"none";
+    if($("btn-continue-squad"))  $("btn-continue-squad").style.display=isHost?"":"none";
   });
 
   socket.on("room_restarted",data=>{
@@ -1569,7 +1666,9 @@ function initSocket(){
     _saveSession(roomCode, profile.name);
     renderPlayersList(data.players||[]); teamsData={};
     if($("teams-panel")) $("teams-panel").style.display="none";
+    if($("round-fun-stats")) $("round-fun-stats").style.display="none";
     transitionTo("view-lobby","🏠"); toast("🔄 Перезапуск!"); Sounds.start();
+    _startWaitingTips();
   });
 
   socket.on("admin_action_result",data=>{
@@ -1582,6 +1681,35 @@ function initSocket(){
   socket.on("heartbeat_ack",()=>{});
 }
 
+/* ── Забавная статистика раунда ── */
+function _renderFunStats(data){
+  const el=$("round-fun-stats"); if(!el) return;
+  const players=data.players||[];
+  if(!players.length){ el.style.display="none"; return; }
+
+  const totalCorrect=players.reduce((s,p)=>s+(p.total_correct||0),0);
+  const totalQ=data.total_questions||players.reduce((m,p)=>Math.max(m,p.total_correct||0),0)||1;
+  const accuracy=totalQ>0?Math.round(totalCorrect/players.length/totalQ*100):0;
+
+  // MVP по количеству правильных
+  const mvp=players.slice().sort((a,b)=>(b.total_correct||0)-(a.total_correct||0))[0];
+  // Самый щедрый (highest score)
+  const richest=players[0];
+  // Самый стабильный (наименьший разрыв между правильными и неправильными)
+
+  const facts=[];
+  if(mvp) facts.push(`🎯 MVP: <b>${mvp.name}</b> — ${mvp.total_correct||0} правильных`);
+  facts.push(`📊 Точность команды: <b>${accuracy}%</b>`);
+  if(richest) facts.push(`🏆 Победитель: <b>${richest.name}</b> с ${richest.score} очков`);
+  if(data.mode==="team"&&data.team_scores){
+    const ts=data.team_scores; const winner=data.winner_team;
+    if(winner&&data.team_names) facts.push(`🤝 Команда «${data.team_names[winner]}» набрала ${ts[winner]} очков`);
+  }
+
+  el.innerHTML=facts.map(f=>`<div class="fun-stat-item">${f}</div>`).join("");
+  el.style.display="";
+}
+
 /* ── Стиль для аватара читера ── */
 (function(){
   const s=document.createElement("style");
@@ -1591,3 +1719,528 @@ function initSocket(){
 
 /* ── PWA ── */
 if("serviceWorker"in navigator) navigator.serviceWorker.register("/static/js/sw.js").catch(()=>{});
+
+/* ════════════════════════════════════════════════════════
+   ACCOUNTS — авторизация
+   ════════════════════════════════════════════════════════ */
+let _authUser = null;  // текущий авторизованный пользователь
+
+async function initAuth() {
+  try {
+    const d = await fetch("/api/auth/me").then(r=>r.json());
+    if (d.logged_in) _setAuthUser(d.user);
+  } catch(_) {}
+}
+
+function _setAuthUser(user) {
+  _authUser = user;
+  _renderAuthBar(user);
+  _renderAuthProfile(user);
+  // Подставляем имя в поля ввода
+  if (user && $("create-name") && !$("create-name").value) $("create-name").value = user.username;
+  if (user && $("join-name")   && !$("join-name").value)   $("join-name").value   = user.username;
+}
+
+function _renderAuthBar(user) {
+  const bar   = $("hero-user-bar");
+  const icon  = $("auth-mode-icon");
+  const label = $("auth-mode-label");
+  if (!bar) return;
+  if (user) {
+    bar.style.display="flex";
+    if ($("hero-user-name"))  $("hero-user-name").textContent  = user.username;
+    if ($("hero-user-coins")) $("hero-user-coins").textContent = `💰 ${user.coins||0}`;
+    if ($("hero-user-level")) $("hero-user-level").textContent = `Ур. ${user.level||1}`;
+    if (icon)  icon.textContent  = "👤";
+    if (label) label.textContent = user.username;
+  } else {
+    bar.style.display="none";
+    if (icon)  icon.textContent  = "👤";
+    if (label) label.textContent = "Войти";
+  }
+}
+
+function _renderAuthProfile(user) {
+  const loggedOut = $("auth-logged-out");
+  const loggedIn  = $("auth-logged-in");
+  if (!loggedOut || !loggedIn) return;
+  if (!user) {
+    loggedOut.style.display=""; loggedIn.style.display="none"; return;
+  }
+  loggedOut.style.display="none"; loggedIn.style.display="";
+  if ($("auth-profile-name"))  $("auth-profile-name").textContent  = user.username;
+  if ($("auth-profile-level")) $("auth-profile-level").textContent = `Уровень ${user.level||1} · ${user.xp||0} XP`;
+  if ($("auth-profile-coins")) $("auth-profile-coins").textContent = `💰 ${user.coins||0}`;
+  if ($("auth-profile-xp"))    $("auth-profile-xp").textContent    = `XP: ${user.xp||0}`;
+  if ($("auth-stat-games"))    $("auth-stat-games").textContent    = user.games_played||0;
+  if ($("auth-stat-wins"))     $("auth-stat-wins").textContent     = user.wins||0;
+  if ($("auth-stat-score"))    $("auth-stat-score").textContent    = user.total_score||0;
+  // Достижения
+  const achEl = $("auth-achievements");
+  if (achEl && user.achievements) {
+    achEl.innerHTML = user.achievements.map(a =>
+      `<span class="ach-badge ${a.unlocked?"unlocked":"locked"}" title="${a.desc}">${a.icon} ${a.title}</span>`
+    ).join("");
+  }
+}
+
+function initAuthUI() {
+  on($("btn-auth-login"), "click", async()=>{
+    const u = ($("auth-login-name").value||"").trim();
+    const p = ($("auth-login-pass").value||"").trim();
+    if (!u||!p) return;
+    const d = await fetch("/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:p})}).then(r=>r.json()).catch(()=>({}));
+    if (d.ok) {
+      _setAuthUser(d.user); toast(`✅ Добро пожаловать, ${d.user.username}!`);
+      showView("view-main");
+    } else {
+      $("auth-login-error").style.display=""; $("auth-login-error").textContent=d.error||"Ошибка";
+    }
+  });
+  on($("btn-auth-register"),"click",async()=>{
+    const u = ($("auth-reg-name").value||"").trim();
+    const p = ($("auth-reg-pass").value||"").trim();
+    if (!u||!p) return;
+    const d = await fetch("/api/auth/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:p})}).then(r=>r.json()).catch(()=>({}));
+    if (d.ok) {
+      _setAuthUser(d.user); toast(`🎉 Аккаунт создан! Добро пожаловать!`);
+      showView("view-main");
+    } else {
+      $("auth-reg-error").style.display=""; $("auth-reg-error").textContent=d.error||"Ошибка";
+    }
+  });
+  on($("btn-auth-logout"),"click",async()=>{
+    await fetch("/api/auth/logout",{method:"POST"});
+    _authUser=null; _setAuthUser(null); toast("👋 Вышли из аккаунта");
+  });
+  // Tab switcher for auth view
+  qsa("#view-auth .tab-btn").forEach(btn=>btn.onclick=()=>{
+    qsa("#view-auth .tab-btn").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    const t=btn.dataset.tab;
+    qsa("#view-auth .tab-panel").forEach(p=>p.style.display="none");
+    const panel=$(t==="auth-login"?"tab-auth-login":"tab-auth-register");
+    if(panel){panel.style.display="";panel.classList.add("active");}
+  });
+}
+
+
+/* ════════════════════════════════════════════════════════
+   CAMPAIGN — режим кампании
+   ════════════════════════════════════════════════════════ */
+let _campData     = null;
+let _campCurrent  = null;   // {level, questions, idx, score, correct}
+let _campTimer    = null;
+
+async function loadCampaign() {
+  if (!_authUser) {
+    const prompt = $("campaign-login-prompt");
+    if (prompt) prompt.style.display="";
+    $("campaign-map").innerHTML="";
+    return;
+  }
+  const prompt = $("campaign-login-prompt");
+  if (prompt) prompt.style.display="none";
+  try {
+    _campData = await fetch("/api/campaign/levels").then(r=>r.json());
+    _renderCampaignMap(_campData);
+  } catch(e) { toast("❌ Ошибка загрузки кампании"); }
+}
+
+function _renderCampaignMap(data) {
+  const map   = $("campaign-map"); if(!map) return;
+  const stars  = data.total_stars||0;
+  if ($("camp-stars-total")) $("camp-stars-total").textContent = `⭐ ${stars} звёзд`;
+  const worlds = {};
+  (data.levels||[]).forEach(l=> (worlds[l.world]||=[]).push(l));
+  const WORLD_NAMES = {1:"🌍 Мир знаний",2:"🎭 Мир культуры",3:"🔮 Мир мастеров"};
+  map.innerHTML = Object.entries(worlds).map(([w,levels])=>`
+    <div class="camp-world-title">${WORLD_NAMES[w]||"Мир "+w}</div>
+    ${levels.map(l=>{
+      const stars = l.stars||0;
+      const starsStr = "⭐".repeat(stars)+"☆".repeat(3-stars);
+      const locked = l.locked;
+      return `<div class="camp-level-card ${locked?"locked":""} ${l.boss?"boss":""}"
+        onclick="${locked?"void(0)":"startCampaignLevel("+l.id+")"}">
+        <div class="camp-level-icon">${l.boss?"⚔️": (locked?"🔒":"🧠")}</div>
+        <div class="camp-level-info">
+          <div class="camp-level-name">${l.title}</div>
+          <div class="camp-level-meta">${l.difficulty==="easy"?"Лёгкий":l.difficulty==="medium"?"Средний":"Сложный"} · ${l.questions} вопросов · 🪙${l.reward_coins}</div>
+        </div>
+        <div class="camp-stars">${stars>0?starsStr:"☆☆☆"}</div>
+        ${locked?`<div style="font-size:.72rem;color:var(--red)">⭐${l.req_stars}</div>`:""}
+      </div>`;
+    }).join("")}
+  `).join("");
+}
+
+async function startCampaignLevel(levelId) {
+  if (!_authUser) { showView("view-auth"); return; }
+  const level = _campData?.levels?.find(l=>l.id===levelId);
+  if (!level || level.locked) return;
+  toast("🤖 Генерируем вопросы...", 2000);
+  // Импортируем generate_questions через API (используем ai_client через socket?)
+  // Грузим через /api/learn/from_text с темой уровня — нет, это другой формат
+  // Используем серверный endpoint
+  try {
+    const resp = await fetch("/api/campaign/start",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({level_id:levelId})
+    }).then(r=>r.json());
+    if (!resp.questions?.length) { toast("❌ Не удалось получить вопросы"); return; }
+    _campCurrent = {
+      level, questions: resp.questions,
+      idx:0, score:0, correct:0, answered:false
+    };
+    _showCampaignGame();
+  } catch(e) { toast("❌ Ошибка загрузки уровня: "+e); }
+}
+
+function _showCampaignGame() {
+  const c = _campCurrent; if(!c) return;
+  showView("view-campaign-game");
+  if ($("camp-level-title")) $("camp-level-title").textContent = c.level.title;
+  if ($("camp-q-total"))     $("camp-q-total").textContent    = c.questions.length;
+  if ($("camp-result-overlay")) $("camp-result-overlay").style.display="none";
+  _campShowQuestion();
+}
+
+function _campShowQuestion() {
+  const c = _campCurrent; if(!c) return;
+  const q = c.questions[c.idx];
+  if (!q) { _campFinish(); return; }
+  c.answered = false;
+  if ($("camp-q-num"))       $("camp-q-num").textContent      = c.idx+1;
+  if ($("camp-score"))       $("camp-score").textContent      = c.score;
+  if ($("camp-explanation")) $("camp-explanation").style.display="none";
+  if ($("camp-question-text")) $("camp-question-text").textContent = q.question;
+  // Timer bar
+  clearInterval(_campTimer);
+  let t=20;
+  const bar = $("camp-timer-bar");
+  if(bar){bar.style.width="100%"; bar.style.background="var(--primary)";}
+  _campTimer=setInterval(()=>{
+    t--;
+    if(bar) bar.style.width=(t/20*100)+"%";
+    if(bar&&t<=5) bar.style.background="var(--red)";
+    if(t<=0) { clearInterval(_campTimer); if(!c.answered) _campAnswer(-1); }
+  },1000);
+  // Options
+  const opts = $("camp-options"); if(!opts) return;
+  const LETTERS=["A","B","C","D","E","F"];
+  opts.innerHTML=(q.options||[]).map((o,i)=>
+    `<button class="option-btn" data-idx="${i}" onclick="_campAnswer(${i})">
+      <span class="opt-letter">${LETTERS[i]}</span>${o}
+    </button>`
+  ).join("");
+}
+
+function _campAnswer(idx) {
+  const c=_campCurrent; if(!c||c.answered) return;
+  c.answered=true;
+  clearInterval(_campTimer);
+  const q=c.questions[c.idx];
+  const correct=q.correct;
+  const isOk=(idx===correct);
+  if(isOk){ c.score+=100; c.correct++; NeuralBg.pulse("#34d399",0.8); }
+  else NeuralBg.pulse("#f87171",0.6);
+  // Подсветка
+  qsa("#camp-options .option-btn").forEach((btn,i)=>{
+    if(i===correct) btn.classList.add("correct");
+    else if(i===idx&&!isOk) btn.classList.add("wrong");
+    btn.disabled=true;
+  });
+  const expEl=$("camp-explanation");
+  if(expEl&&q.explanation){ expEl.textContent=q.explanation; expEl.style.display=""; }
+  // Авто-переход через 1.8с
+  setTimeout(()=>{
+    c.idx++;
+    if(c.idx>=c.questions.length) _campFinish();
+    else _campShowQuestion();
+  },1800);
+}
+
+async function _campFinish() {
+  clearInterval(_campTimer);
+  const c=_campCurrent; if(!c) return;
+  const pct=Math.round(c.correct/c.questions.length*100);
+  const stars=pct>=90?3:pct>=65?2:pct>=40?1:0;
+  const starsStr="⭐".repeat(stars)+"☆".repeat(3-stars);
+  // Сохраняем результат
+  const res=await fetch("/api/campaign/result",{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({level_id:c.level.id,score:c.score,correct:c.correct,total_questions:c.questions.length})
+  }).then(r=>r.json()).catch(()=>({}));
+  if($("camp-result-overlay")) $("camp-result-overlay").style.display="";
+  if($("camp-result-stars"))   $("camp-result-stars").textContent=starsStr;
+  if($("camp-result-text"))    $("camp-result-text").innerHTML=
+    `<b>${c.correct}</b> из <b>${c.questions.length}</b> верных (${pct}%)<br>`+
+    (res.coins?`💰 +${res.coins} монет · `:"")+(res.xp?`+${res.xp} XP`:"");
+  if(stars>0) fireConfetti();
+  // Разблокированные достижения
+  if(res.new_achievements?.length)
+    res.new_achievements.forEach(id=>toast(`🏅 Достижение: ${ACHIEVEMENTS_CLIENT[id]||id}`,3000));
+  // Обновляем профиль
+  const me=await fetch("/api/auth/me").then(r=>r.json()).catch(()=>({}));
+  if(me.logged_in) _setAuthUser(me.user);
+}
+
+function initCampaignUI() {
+  on($("btn-camp-retry"),"click",()=>{ _campCurrent&&(_campCurrent.idx=0,_campCurrent.score=0,_campCurrent.correct=0,_showCampaignGame()); });
+  on($("btn-camp-next"), "click",()=>loadCampaign().then(()=>showView("view-campaign")));
+  on($("btn-camp-back"), "click",()=>{ clearInterval(_campTimer); showView("view-campaign"); });
+}
+
+const ACHIEVEMENTS_CLIENT={
+  first_win:"Первая победа", streak5:"В потоке", campaign_world1:"Покоритель мира 1",
+  campaign_boss:"Боссубийца", ugc_creator:"Автор", ugc_10:"Контрибьютор",
+  games10:"Завсегдатай", games50:"Ветеран", perfect_level:"Перфекционист", learn_mode:"Студент"
+};
+
+
+/* ════════════════════════════════════════════════════════
+   LEARN MODE — режим обучения
+   ════════════════════════════════════════════════════════ */
+let _learnQuestions=[], _learnIdx=0, _learnCorrect=0;
+
+function initLearnUI() {
+  // Tab switcher
+  qsa("#view-learn .tab-btn").forEach(btn=>btn.onclick=()=>{
+    qsa("#view-learn .tab-btn").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    qsa("#view-learn .tab-panel").forEach(p=>p.style.display="none");
+    const t=btn.dataset.tab;
+    const panel=$(t==="learn-text"?"tab-learn-text":"tab-learn-url");
+    if(panel){panel.style.display="";}
+  });
+  on($("btn-learn-generate"),"click",generateLearnQuiz);
+  on($("btn-learn-next"),    "click",learnNextQ);
+  on($("btn-learn-retry"),   "click",()=>{
+    _learnIdx=0;_learnCorrect=0;
+    $("learn-results-panel").style.display="none";
+    $("learn-game-panel").style.display="";
+    _learnShowQ();
+  });
+}
+
+async function generateLearnQuiz() {
+  const btn=$("btn-learn-generate"); if(!btn) return;
+  const errEl=$("learn-error"); if(errEl)errEl.style.display="none";
+  const isUrl=qsa("#view-learn .tab-btn")[1]?.classList.contains("active");
+  const num=parseInt($("learn-num-q")?.value||"6",10);
+  let body={num_questions:num};
+  if(isUrl){
+    const url=($("learn-url-input")?.value||"").trim();
+    if(!url){toast("⚠️ Введите URL");return;}
+    body.url=url;
+  } else {
+    const text=($("learn-text-input")?.value||"").trim();
+    if(text.length<50){toast("⚠️ Текст слишком короткий");return;}
+    body.content=text;
+  }
+  btn.disabled=true; btn.textContent="⏳ Генерируем...";
+  try{
+    const endpoint=isUrl?"/api/learn/from_url":"/api/learn/from_text";
+    const d=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(r=>r.json());
+    if(!d.questions?.length){
+      if(errEl){errEl.style.display="";errEl.textContent=d.error||"Ошибка генерации";}
+      return;
+    }
+    _learnQuestions=d.questions; _learnIdx=0; _learnCorrect=0;
+    $("learn-input-panel").style.display="none";
+    $("learn-game-panel").style.display="";
+    $("learn-results-panel").style.display="none";
+    if($("learn-q-total"))$("learn-q-total").textContent=d.questions.length;
+    _learnShowQ();
+    toast(`✅ ${d.questions.length} вопросов готово!`);
+  }catch(e){
+    if(errEl){errEl.style.display="";errEl.textContent="Сетевая ошибка";}
+  }finally{
+    btn.disabled=false; btn.textContent="🤖 Сгенерировать";
+  }
+}
+
+function _learnShowQ(){
+  const q=_learnQuestions[_learnIdx]; if(!q) return;
+  if($("learn-q-num"))$("learn-q-num").textContent=_learnIdx+1;
+  if($("learn-correct-cnt"))$("learn-correct-cnt").textContent=_learnCorrect;
+  if($("learn-explanation"))$("learn-explanation").style.display="none";
+  if($("learn-question-text"))$("learn-question-text").textContent=q.question;
+  if($("btn-learn-next"))$("btn-learn-next").style.display="none";
+  const opts=$("learn-options"); if(!opts)return;
+  const LETTERS=["A","B","C","D"];
+  opts.innerHTML=(q.options||[]).map((o,i)=>
+    `<button class="option-btn" data-idx="${i}" onclick="_learnAnswer(${i})">
+      <span class="opt-letter">${LETTERS[i]}</span>${o}
+    </button>`
+  ).join("");
+}
+
+function _learnAnswer(idx){
+  const q=_learnQuestions[_learnIdx]; if(!q) return;
+  const ok=idx===q.correct;
+  if(ok){_learnCorrect++;NeuralBg.pulse("#34d399",0.7);}else NeuralBg.pulse("#f87171",0.5);
+  qsa("#learn-options .option-btn").forEach((btn,i)=>{
+    if(i===q.correct)btn.classList.add("correct");
+    else if(i===idx&&!ok)btn.classList.add("wrong");
+    btn.disabled=true;
+  });
+  const expEl=$("learn-explanation");
+  if(expEl&&q.explanation){expEl.textContent=(ok?"✅ ":"❌ ")+q.explanation;expEl.style.display="";}
+  if($("btn-learn-next"))$("btn-learn-next").style.display="";
+  if(_learnIdx>=_learnQuestions.length-1)
+    if($("btn-learn-next"))$("btn-learn-next").textContent="📊 Результаты";
+}
+
+function learnNextQ(){
+  _learnIdx++;
+  if(_learnIdx>=_learnQuestions.length){
+    _learnShowResults(); return;
+  }
+  _learnShowQ();
+  if($("btn-learn-next"))$("btn-learn-next").textContent="Следующий →";
+}
+
+function _learnShowResults(){
+  $("learn-game-panel").style.display="none";
+  const pct=Math.round(_learnCorrect/_learnQuestions.length*100);
+  const stars=pct>=90?"⭐⭐⭐":pct>=65?"⭐⭐":pct>=40?"⭐":"";
+  $("learn-results-panel").style.display="";
+  $("learn-results-body").innerHTML=`
+    <div style="text-align:center;font-size:1.5rem;margin-bottom:8px">${stars}</div>
+    <div style="text-align:center;font-size:2rem;font-weight:700;color:var(--primary)">${pct}%</div>
+    <div style="text-align:center;color:var(--text-muted);margin-bottom:14px">${_learnCorrect} из ${_learnQuestions.length} верных</div>
+    <div style="height:8px;background:rgba(139,92,246,.15);border-radius:4px;overflow:hidden">
+      <div class="learn-progress-bar" style="width:${pct}%"></div>
+    </div>
+    <p style="font-size:.82rem;color:var(--text-muted);margin-top:10px;text-align:center">
+      ${pct>=80?"🎉 Отличный результат!":pct>=50?"👍 Неплохо, но есть куда расти":"📖 Попробуй ещё раз после повторения материала"}
+    </p>
+  `;
+  if(pct>=80)fireConfetti();
+}
+
+
+/* ════════════════════════════════════════════════════════
+   UGC — пользовательские вопросы
+   ════════════════════════════════════════════════════════ */
+function initUgcUI() {
+  const form=$("ugc-create-form");
+  const prompt=$("ugc-auth-prompt");
+  if(_authUser){if(form)form.style.display="";if(prompt)prompt.style.display="none";}
+  else{if(form)form.style.display="none";if(prompt)prompt.style.display="";}
+
+  on($("btn-ugc-submit"),"click",submitUgcQuestion);
+  on($("btn-ugc-load-my"),"click",loadMyUgcQuestions);
+}
+
+async function submitUgcQuestion(){
+  if(!_authUser){showView("view-auth");return;}
+  const text=($("ugc-question-text")?.value||"").trim();
+  const options=[...(qsa(".ugc-opt")||[])].map(i=>i.value.trim());
+  const correct=parseInt($("ugc-correct-select")?.value||"0",10);
+  const topic=($("ugc-topic")?.value||"").trim();
+  const diff=parseInt($("ugc-difficulty")?.value||"2",10);
+  const errEl=$("ugc-create-error");
+  if(errEl)errEl.style.display="none";
+  const d=await fetch("/api/ugc/create",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({question:text,options,correct,topic,difficulty:diff})
+  }).then(r=>r.json()).catch(()=>({}));
+  if(d.ok){
+    toast(`✅ Вопрос отправлен! +${d.coins_earned||5}💰`);
+    // Сброс формы
+    if($("ugc-question-text"))$("ugc-question-text").value="";
+    qsa(".ugc-opt").forEach(i=>i.value="");
+    // Достижения
+    if(d.new_achievements?.length)
+      d.new_achievements.forEach(id=>toast(`🏅 Достижение: ${ACHIEVEMENTS_CLIENT[id]||id}`,3000));
+    NeuralBg.pulse("#34d399",0.7);
+    loadMyUgcQuestions();
+  } else {
+    if(errEl){errEl.style.display="";errEl.textContent=d.error||"Ошибка";}
+  }
+}
+
+async function loadMyUgcQuestions(){
+  const el=$("ugc-my-list"); if(!el||!_authUser)return;
+  el.innerHTML='<p class="muted" style="font-size:.82rem">Загрузка...</p>';
+  const d=await fetch("/api/ugc/my").then(r=>r.json()).catch(()=>({questions:[]}));
+  const qs=d.questions||[];
+  if(!qs.length){el.innerHTML='<p class="muted" style="font-size:.82rem">Ещё нет вопросов</p>';return;}
+  const STATUS_MAP={pending:"⏳ На модерации",approved:"✅ Одобрен",rejected:"❌ Отклонён"};
+  el.innerHTML=qs.slice(0,20).map(q=>`
+    <div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06)">
+      <div style="font-size:.82rem;font-weight:600">${q.question}</div>
+      <div style="display:flex;gap:8px;margin-top:4px;align-items:center">
+        <span class="ugc-status-badge ${q.status}">${STATUS_MAP[q.status]||q.status}</span>
+        <span style="font-size:.72rem;color:var(--text-muted)">⭐${(q.rating||0).toFixed(1)} · 🎯${q.usage_count||0}×</span>
+        ${q.reject_reason?`<span style="font-size:.72rem;color:var(--red)">${q.reject_reason}</span>`:""}
+      </div>
+    </div>
+  `).join("");
+}
+
+
+/* ════════════════════════════════════════════════════════
+   ADMIN PANEL UPGRADES — UGC модерация
+   ════════════════════════════════════════════════════════ */
+async function loadAdminUgcPending(){
+  const el=$("admin-ugc-list"); if(!el)return;
+  el.innerHTML='<p class="muted" style="font-size:.82rem">Загрузка...</p>';
+  const d=await fetch("/api/admin/ugc_pending").then(r=>r.json()).catch(()=>({questions:[]}));
+  const qs=d.questions||[];
+  if(!qs.length){el.innerHTML='<p class="muted" style="font-size:.82rem">Нет на модерации</p>';return;}
+  el.innerHTML=qs.map(q=>`
+    <div style="padding:10px;background:rgba(139,92,246,.05);border-radius:8px;margin-bottom:8px">
+      <div style="font-size:.83rem;font-weight:600;margin-bottom:4px">${q.question}</div>
+      <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:8px">Автор: ${q.author} · Тема: ${q.topic||"—"}</div>
+      <div style="display:flex;gap:5px">
+        <button class="btn btn-sm btn-secondary" style="color:var(--green)" onclick="ugcModerate(${q.id},true)">✅ Одобрить</button>
+        <button class="btn btn-sm btn-danger" onclick="ugcModerate(${q.id},false)">❌ Отклонить</button>
+      </div>
+    </div>
+  `).join("");
+}
+window.ugcModerate=async(id,approve)=>{
+  const reason=approve?"":prompt("Причина отклонения:")||"Не соответствует правилам";
+  await fetch("/api/admin/ugc_moderate",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({question_id:id,approve,reason})}).then(r=>r.json());
+  toast(approve?"✅ Одобрен":"❌ Отклонён");
+  loadAdminUgcPending();
+};
+
+
+/* ════════════════════════════════════════════════════════
+   ИНИЦИАЛИЗАЦИЯ
+   ════════════════════════════════════════════════════════ */
+window.addEventListener("DOMContentLoaded",()=>{
+  initAuth().then(()=>{
+    initAuthUI();
+    initCampaignUI();
+    initLearnUI();
+    initUgcUI();
+  });
+  // При открытии campaign view — загружаем карту
+  const origShowView = window.showView;
+  window.showViewOrig = origShowView;
+  window.showView = (id, ...args)=>{
+    origShowView(id, ...args);
+    if(id==="view-campaign") loadCampaign();
+    if(id==="view-ugc") {
+      const form=$("ugc-create-form");
+      const prompt=$("ugc-auth-prompt");
+      if(_authUser){if(form)form.style.display="";if(prompt)prompt.style.display="none";}
+      else{if(form)form.style.display="none";if(prompt)prompt.style.display="";}
+    }
+    if(id==="view-learn"){
+      $("learn-input-panel").style.display="";
+      $("learn-game-panel").style.display="none";
+      $("learn-results-panel").style.display="none";
+    }
+  };
+});
+
+window.startCampaignLevel=startCampaignLevel;
+window._campAnswer=_campAnswer;
+window._learnAnswer=_learnAnswer;

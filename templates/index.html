@@ -11,13 +11,21 @@
 </head>
 <body class="dark">
 <div class="bg-mesh"></div>
-<canvas id="particles-canvas"></canvas>
-<div class="star-field" id="star-field"></div>
+<canvas id="neural-canvas"></canvas>
 <div id="toasts" class="toasts"></div>
 <div id="reactions-overlay" class="reactions-overlay"></div>
 
+<!-- Дублирующая вкладка — предупреждение -->
+<div id="duplicate-tab-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(8,5,22,.97);display:none;flex-direction:column;align-items:center;justify-content:center;gap:16px">
+  <div style="font-size:3rem">⚠️</div>
+  <div style="font-family:var(--font-head);font-size:1.1rem;color:var(--accent);text-align:center">Игра уже открыта в другой вкладке</div>
+  <div style="color:var(--text-muted);font-size:.9rem;text-align:center;max-width:300px">Закрой ту вкладку или используй эту как основную</div>
+  <button id="duplicate-take-over" class="btn btn-primary">Использовать эту вкладку</button>
+</div>
+
 <!-- Overlay анимированного перехода -->
-<div id="transition-overlay" class="transition-overlay" style="display:none"></div>
+<div id="transition-overlay" class="transition-overlay" style="display:none">
+</div>
 
 <div class="toolbar">
   <button id="btn-leaderboard" class="toolbar-btn" title="Таблица лидеров">🏆</button>
@@ -115,13 +123,24 @@
           <div class="cheat-row"><div class="cheat-label">👁 Видеть правильный ответ</div><button class="toggle" id="cheat-show-answer"></button></div>
           <div class="cheat-row"><div class="cheat-label">💰 Редактор очков (+/−50)</div><button class="toggle" id="cheat-edit-scores"></button></div>
           <div class="cheat-row"><div class="cheat-label">♾️ Бесконечные жизни</div><button class="toggle" id="cheat-infinite-lives"></button></div>
-          <div class="cheat-row"><div class="cheat-label">⚡ Мгновенный ответ (без таймера)</div><button class="toggle" id="cheat-instant-answer"></button></div>
           <div class="cheat-row"><div class="cheat-label">👻 Невидимка в списке</div><button class="toggle" id="cheat-invisible"></button></div>
           <div class="cheat-row"><div class="cheat-label">🔄 Неограниченные перефразировки</div><button class="toggle" id="cheat-free-rephrase"></button></div>
 
+          <!-- Секция: Новые читы -->
+          <p class="cheat-section-label" style="margin-top:14px">🆕 Новые инструменты</p>
+          <button class="btn btn-secondary btn-full mb-8" id="cheat-skip-btn">⏭️ Пропустить вопрос</button>
+          <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
+            <input id="cheat-lives-player" class="inp" style="flex:1;padding:6px 10px;font-size:.83rem" placeholder="Ник игрока">
+            <input id="cheat-lives-count"  class="inp" style="width:56px;padding:6px 8px;font-size:.83rem;text-align:center" type="number" value="3" min="0" max="10">
+            <button class="btn btn-sm btn-secondary" id="cheat-set-lives-btn">❤️</button>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
+            <input id="cheat-add-score-amount" class="inp" style="flex:1;padding:6px 10px;font-size:.83rem;text-align:center" type="number" value="100" step="50">
+            <button class="btn btn-sm btn-secondary" id="cheat-add-score-all-btn">💰 +Очки всем</button>
+          </div>
+
           <!-- Секция: Режим презентации -->
           <p class="cheat-section-label" style="margin-top:14px">🖥 Отображение</p>
-          <div class="cheat-row"><div class="cheat-label">📺 Режим презентации (локально)</div><button class="toggle" id="cheat-presentation-local"></button></div>
           <div class="cheat-row"><div class="cheat-label">📡 Презентация для всех</div><button class="toggle" id="cheat-presentation-global"></button></div>
 
           <!-- Секция: Управление -->
@@ -141,16 +160,6 @@
           <div style="display:flex;gap:8px;margin-bottom:6px">
             <input id="cheat-global-reset-nick" class="inp" style="flex:1;padding:6px 10px;font-size:.83rem" placeholder="Ник (глобальный сброс)">
             <button class="btn btn-sm btn-danger" id="cheat-global-reset-btn">Сброс БД</button>
-          </div>
-
-          <!-- Секция: Чат -->
-          <p class="cheat-section-label" style="margin-top:14px">💬 Чат</p>
-          <div style="display:flex;gap:8px;margin-bottom:6px">
-            <input id="cheat-spoof-name" class="inp" style="flex:1;padding:6px 10px;font-size:.83rem" placeholder="Имя (от чьего лица)">
-          </div>
-          <div style="display:flex;gap:8px;margin-bottom:6px">
-            <input id="cheat-spoof-text" class="inp" style="flex:1;padding:6px 10px;font-size:.83rem" placeholder="Текст сообщения">
-            <button class="btn btn-sm btn-secondary" id="cheat-spoof-send-btn">📨</button>
           </div>
 
           <!-- Секция: Статистика ответов -->
@@ -185,7 +194,10 @@
             <!-- Комнаты -->
             <div class="apage active" id="apage-rooms">
               <div id="admin-rooms-list"><p class="muted" style="font-size:.85rem">Загрузка...</p></div>
-              <button class="btn btn-secondary btn-full mt-8" id="btn-admin-refresh">🔄 Обновить</button>
+              <div style="display:flex;gap:8px;margin-top:8px">
+                <button class="btn btn-secondary btn-full" id="btn-admin-refresh">🔄 Обновить</button>
+                <button class="btn btn-danger" id="btn-admin-cleanup" title="Удалить пустые и давно неактивные комнаты">🧹 Очистить</button>
+              </div>
             </div>
 
             <!-- Юзеры -->
@@ -256,7 +268,35 @@
   <div class="hero">
     <div class="hero-logo">🧠 Мозговой Штурм</div>
     <div class="hero-sub">Викторина с искусственным интеллектом</div>
+    <!-- Блок авторизованного пользователя -->
+    <div id="hero-user-bar" style="display:none;margin-top:10px;background:rgba(139,92,246,0.12);border:1px solid var(--card-border);border-radius:12px;padding:8px 16px;display:none;flex-direction:row;align-items:center;gap:10px;justify-content:space-between">
+      <span id="hero-user-name" style="font-weight:700;font-size:.9rem"></span>
+      <span id="hero-user-coins" style="font-size:.8rem;color:var(--gold)">💰 0</span>
+      <span id="hero-user-level" style="font-size:.8rem;color:var(--accent)">Ур. 1</span>
+      <button class="btn btn-sm btn-ghost" onclick="showView('view-auth')">👤</button>
+    </div>
   </div>
+
+  <!-- Новые режимы -->
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+    <button class="mode-card-btn" onclick="showView('view-campaign')">
+      <span style="font-size:1.5rem">🗺️</span>
+      <span>Кампания</span>
+    </button>
+    <button class="mode-card-btn" onclick="showView('view-learn')">
+      <span style="font-size:1.5rem">📚</span>
+      <span>Обучение</span>
+    </button>
+    <button class="mode-card-btn" onclick="showView('view-ugc')">
+      <span style="font-size:1.5rem">✏️</span>
+      <span>Создать вопрос</span>
+    </button>
+    <button class="mode-card-btn" id="btn-show-auth" onclick="showView('view-auth')">
+      <span style="font-size:1.5rem" id="auth-mode-icon">👤</span>
+      <span id="auth-mode-label">Войти</span>
+    </button>
+  </div>
+
   <div class="tab-switcher">
     <button class="tab-btn active" data-tab="create">✨ Создать</button>
     <button class="tab-btn" data-tab="join">🚀 Войти</button>
@@ -435,17 +475,20 @@
         <button id="btn-leave-lobby" class="btn btn-ghost"    style="display:none">← Выйти</button>
       </div>
 
-      <!-- 🎳 БОУЛИНГ -->
-      <div id="bowling-card" class="card bowling-card">
-        <h3 style="margin-bottom:2px">🎳 Боулинг</h3>
-        <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:10px">Кинь шар и сбей все кегли «G»!</p>
-        <div class="bowling-score-row">
-          <span>Страйков: <b id="bowling-strikes">0</b></span>
-          <span>Очков: <b id="bowling-pts">0</b></span>
+      <!-- 🧠 BRAIN REFLEX — мини-игра в лобби -->
+      <div class="card" style="margin-top:16px;padding:16px 18px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <h3 style="font-size:.95rem;margin:0">🧠 Brain Reflex</h3>
+          <span id="reflex-score-badge" style="font-size:.82rem;color:var(--gold);font-weight:700">Рекорд: <b id="reflex-best">0</b></span>
         </div>
-        <canvas id="bowling-canvas" width="340" height="200" style="width:100%;border-radius:10px;cursor:pointer;touch-action:none"></canvas>
-        <p id="bowling-msg" style="text-align:center;font-size:.85rem;color:var(--accent);min-height:1.4em;margin-top:6px"></p>
-        <button id="bowling-reset" class="btn btn-secondary" style="margin-top:8px;width:100%">🔄 Новая игра</button>
+        <p style="font-size:.78rem;color:var(--text-muted);margin-bottom:10px">Кликай по светящимся нейронам пока ждёшь!</p>
+        <canvas id="reflex-canvas" width="340" height="180" style="width:100%;border-radius:10px;cursor:crosshair;touch-action:none;background:rgba(11,7,32,.6);border:1px solid var(--card-border)"></canvas>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+          <span style="font-size:.85rem">Очки: <b id="reflex-pts">0</b> &nbsp;|&nbsp; Серия: <b id="reflex-streak">0</b></span>
+          <button id="reflex-start-btn" class="btn btn-sm btn-secondary">▶ Старт</button>
+        </div>
+        <!-- Совет под игрой -->
+        <div id="waiting-tip" style="font-size:.78rem;color:var(--text-muted);margin-top:8px;min-height:1.8em;transition:opacity .3s"></div>
       </div>
 
     </div><!-- /lobby-left -->
@@ -615,14 +658,212 @@
   <div id="result-banner" class="result-banner" style="display:none"></div>
   <h1 class="results-h">🏆 Итоги игры</h1>
   <div id="leaderboard" class="leaderboard"></div>
+  <!-- Забавная статистика раунда -->
+  <div id="round-fun-stats" class="round-fun-stats" style="display:none"></div>
   <div class="results-buttons">
-    <button id="btn-restart"    class="btn btn-primary"   style="display:none">🔄 Ещё раз!</button>
-    <button id="btn-tournament" class="btn btn-secondary" style="display:none">🏟 Турнир</button>
-    <button id="btn-again"      class="btn btn-ghost">🏠 На главную</button>
+    <button id="btn-continue-squad" class="btn btn-primary"   style="display:none">▶️ Продолжить тем же составом</button>
+    <button id="btn-restart"        class="btn btn-secondary" style="display:none">🔄 Ещё раз!</button>
+    <button id="btn-tournament"     class="btn btn-secondary" style="display:none">🏟 Турнир</button>
+    <button id="btn-again"          class="btn btn-ghost">🏠 На главную</button>
   </div>
 </div>
 
 </div><!-- /app-container -->
+
+<!-- ══ AUTH VIEW ══ -->
+<div id="view-auth" class="view">
+  <button class="btn btn-ghost btn-sm" onclick="showView('view-main')" style="margin-bottom:12px">← Назад</button>
+  <div id="auth-logged-out">
+    <div class="tab-switcher"><button class="tab-btn active" data-tab="auth-login">Войти</button><button class="tab-btn" data-tab="auth-register">Регистрация</button></div>
+    <div id="tab-auth-login" class="tab-panel active card">
+      <h2 class="card-title">👤 Войти в аккаунт</h2>
+      <label class="field-label">Имя пользователя</label>
+      <input id="auth-login-name" class="inp" placeholder="Ваш ник" maxlength="20">
+      <label class="field-label mt-12">Пароль</label>
+      <input id="auth-login-pass" class="inp" type="password" placeholder="Пароль">
+      <div id="auth-login-error" class="field-error" style="display:none"></div>
+      <button class="btn btn-primary btn-full mt-12" id="btn-auth-login">🚀 Войти</button>
+    </div>
+    <div id="tab-auth-register" class="tab-panel card" style="display:none">
+      <h2 class="card-title">✨ Создать аккаунт</h2>
+      <label class="field-label">Имя пользователя</label>
+      <input id="auth-reg-name" class="inp" placeholder="Ваш ник (2-20 символов)" maxlength="20">
+      <label class="field-label mt-12">Пароль</label>
+      <input id="auth-reg-pass" class="inp" type="password" placeholder="Мин. 4 символа">
+      <div id="auth-reg-error" class="field-error" style="display:none"></div>
+      <button class="btn btn-primary btn-full mt-12" id="btn-auth-register">✨ Создать</button>
+    </div>
+  </div>
+  <div id="auth-logged-in" style="display:none">
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+        <div style="font-size:2.5rem" id="auth-profile-avatar">🧠</div>
+        <div>
+          <div style="font-weight:700;font-size:1.1rem" id="auth-profile-name"></div>
+          <div style="font-size:.82rem;color:var(--text-muted)" id="auth-profile-level"></div>
+        </div>
+        <div style="margin-left:auto;text-align:right">
+          <div style="color:var(--gold);font-weight:700" id="auth-profile-coins">💰 0</div>
+          <div style="font-size:.78rem;color:var(--text-muted)" id="auth-profile-xp">XP: 0</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px;text-align:center">
+        <div class="stat-mini"><b id="auth-stat-games">0</b><div>Игр</div></div>
+        <div class="stat-mini"><b id="auth-stat-wins">0</b><div>Побед</div></div>
+        <div class="stat-mini"><b id="auth-stat-score">0</b><div>Очков</div></div>
+      </div>
+      <!-- Достижения -->
+      <h3 style="font-size:.9rem;margin-bottom:8px">🏅 Достижения</h3>
+      <div id="auth-achievements" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px"></div>
+      <button class="btn btn-ghost btn-full" id="btn-auth-logout">Выйти из аккаунта</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CAMPAIGN VIEW ══ -->
+<div id="view-campaign" class="view">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+    <button class="btn btn-ghost btn-sm" onclick="showView('view-main')">← Назад</button>
+    <h2 style="font-size:1.1rem;margin:0">🗺️ Кампания</h2>
+    <span id="camp-stars-total" style="margin-left:auto;color:var(--gold);font-weight:700"></span>
+  </div>
+  <div id="campaign-login-prompt" class="card" style="display:none;text-align:center;padding:20px">
+    <div style="font-size:2rem;margin-bottom:8px">🔒</div>
+    <p style="color:var(--text-muted);margin-bottom:12px">Войдите в аккаунт чтобы сохранять прогресс</p>
+    <button class="btn btn-primary" onclick="showView('view-auth')">👤 Войти / Зарегистрироваться</button>
+  </div>
+  <div id="campaign-map"></div>
+</div>
+
+<!-- ══ CAMPAIGN GAME VIEW ══ -->
+<div id="view-campaign-game" class="view">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+    <button class="btn btn-ghost btn-sm" id="btn-camp-back">← Выйти</button>
+    <h3 id="camp-level-title" style="margin:0;font-size:1rem"></h3>
+    <div style="margin-left:auto;display:flex;gap:12px">
+      <span>❓ <b id="camp-q-num">0</b>/<b id="camp-q-total">0</b></span>
+      <span>⭐ <b id="camp-score">0</b></span>
+    </div>
+  </div>
+  <div id="camp-timer-bar" style="height:5px;background:var(--primary);border-radius:3px;margin-bottom:14px;transition:width .5s linear"></div>
+  <div class="card" id="camp-question-card">
+    <div id="camp-question-text" style="font-size:1rem;font-weight:600;line-height:1.5;margin-bottom:16px"></div>
+    <div id="camp-options" class="options-grid"></div>
+    <div id="camp-explanation" style="display:none;margin-top:12px;padding:10px;background:rgba(139,92,246,.1);border-radius:8px;font-size:.84rem;color:var(--text-muted)"></div>
+  </div>
+  <div id="camp-result-overlay" style="display:none" class="card" style="text-align:center;margin-top:16px">
+    <div id="camp-result-stars" style="font-size:2rem;margin-bottom:8px"></div>
+    <div id="camp-result-text" style="margin-bottom:12px"></div>
+    <div style="display:flex;gap:8px;justify-content:center">
+      <button class="btn btn-secondary" id="btn-camp-retry">🔄 Повтор</button>
+      <button class="btn btn-primary" id="btn-camp-next">Следующий ▶</button>
+      <button class="btn btn-ghost" onclick="showView('view-campaign')">🗺️ Карта</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ LEARN VIEW ══ -->
+<div id="view-learn" class="view">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+    <button class="btn btn-ghost btn-sm" onclick="showView('view-main')">← Назад</button>
+    <h2 style="font-size:1.1rem;margin:0">📚 Режим обучения</h2>
+  </div>
+  <div id="learn-input-panel" class="card">
+    <p style="color:var(--text-muted);font-size:.85rem;margin-bottom:14px">Вставь текст или URL статьи — AI сгенерирует викторину (макс. 2500 символов, 8 вопросов)</p>
+    <div class="tab-switcher" style="margin-bottom:12px">
+      <button class="tab-btn active" data-tab="learn-text">📝 Текст</button>
+      <button class="tab-btn" data-tab="learn-url">🔗 URL</button>
+    </div>
+    <div id="tab-learn-text" class="tab-panel active">
+      <textarea id="learn-text-input" class="inp" rows="6" placeholder="Вставьте любой текст на русском языке..." style="resize:vertical;min-height:120px"></textarea>
+    </div>
+    <div id="tab-learn-url" class="tab-panel" style="display:none">
+      <input id="learn-url-input" class="inp" placeholder="https://..." type="url">
+      <p style="font-size:.75rem;color:var(--text-muted);margin-top:6px">Работает с Википедией, новостями и публичными статьями</p>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
+      <label style="font-size:.83rem;color:var(--text-muted)">Вопросов:</label>
+      <input id="learn-num-q" class="inp" type="number" min="3" max="8" value="6" style="width:64px;text-align:center">
+      <button class="btn btn-primary" id="btn-learn-generate" style="flex:1">🤖 Сгенерировать</button>
+    </div>
+    <div id="learn-error" class="field-error" style="display:none"></div>
+  </div>
+  <!-- Игра в режиме обучения -->
+  <div id="learn-game-panel" style="display:none">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <b>Вопрос <span id="learn-q-num">1</span> / <span id="learn-q-total">6</span></b>
+      <span>✅ <b id="learn-correct-cnt">0</b></span>
+    </div>
+    <div class="card" id="learn-question-card">
+      <div id="learn-question-text" style="font-size:1rem;font-weight:600;line-height:1.5;margin-bottom:16px"></div>
+      <div id="learn-options" class="options-grid"></div>
+      <div id="learn-explanation" style="display:none;margin-top:12px;padding:10px;background:rgba(139,92,246,.1);border-radius:8px;font-size:.84rem"></div>
+    </div>
+    <button class="btn btn-primary btn-full mt-12" id="btn-learn-next" style="display:none">Следующий →</button>
+  </div>
+  <!-- Итоги обучения -->
+  <div id="learn-results-panel" style="display:none" class="card">
+    <h3 style="text-align:center;margin-bottom:12px">📊 Итоги обучения</h3>
+    <div id="learn-results-body"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="btn btn-secondary btn-full" id="btn-learn-retry">🔄 Пройти снова</button>
+      <button class="btn btn-ghost btn-full" onclick="showView('view-main')">🏠 Главная</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ UGC VIEW ══ -->
+<div id="view-ugc" class="view">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+    <button class="btn btn-ghost btn-sm" onclick="showView('view-main')">← Назад</button>
+    <h2 style="font-size:1.1rem;margin:0">✏️ Создать вопрос</h2>
+  </div>
+  <div id="ugc-auth-prompt" class="card" style="display:none;text-align:center;padding:20px">
+    <div style="font-size:2rem;margin-bottom:8px">🔒</div>
+    <p style="color:var(--text-muted);margin-bottom:12px">Для создания вопросов нужен аккаунт</p>
+    <button class="btn btn-primary" onclick="showView('view-auth')">👤 Войти</button>
+  </div>
+  <div id="ugc-create-form" style="display:none">
+    <div class="card">
+      <h3 style="font-size:.95rem;margin-bottom:12px">Новый вопрос</h3>
+      <label class="field-label">Текст вопроса</label>
+      <textarea id="ugc-question-text" class="inp" rows="3" placeholder="Какой элемент имеет атомный номер 79?" style="resize:vertical"></textarea>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px" id="ugc-options-grid">
+        <input class="inp ugc-opt" data-idx="0" placeholder="Вариант A">
+        <input class="inp ugc-opt" data-idx="1" placeholder="Вариант B">
+        <input class="inp ugc-opt" data-idx="2" placeholder="Вариант C">
+        <input class="inp ugc-opt" data-idx="3" placeholder="Вариант D">
+      </div>
+      <label class="field-label mt-12">Правильный ответ</label>
+      <select id="ugc-correct-select" class="inp">
+        <option value="0">A</option><option value="1">B</option>
+        <option value="2">C</option><option value="3">D</option>
+      </select>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
+        <div>
+          <label class="field-label">Тема</label>
+          <input id="ugc-topic" class="inp" placeholder="история, наука...">
+        </div>
+        <div>
+          <label class="field-label">Сложность (1-5)</label>
+          <input id="ugc-difficulty" class="inp" type="number" min="1" max="5" value="2">
+        </div>
+      </div>
+      <div id="ugc-create-error" class="field-error" style="display:none"></div>
+      <button class="btn btn-primary btn-full mt-12" id="btn-ugc-submit">✅ Отправить на модерацию (+5 💰)</button>
+    </div>
+    <!-- Мои вопросы -->
+    <div class="card" style="margin-top:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h3 style="font-size:.9rem;margin:0">📋 Мои вопросы</h3>
+        <button class="btn btn-sm btn-ghost" id="btn-ugc-load-my">🔄</button>
+      </div>
+      <div id="ugc-my-list"><p class="muted" style="font-size:.82rem">Нажми 🔄 для загрузки</p></div>
+    </div>
+  </div>
+</div>
+
+
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js" defer></script>
