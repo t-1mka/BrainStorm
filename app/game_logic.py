@@ -192,7 +192,10 @@ class Player:
     is_invisible: bool = False
     infinite_lives: bool = False
     instant_answer: bool = False
+<<<<<<< HEAD
     is_cheat: bool = False
+=======
+>>>>>>> origin/main
     join_time: float = field(default_factory=time.time)
 
     def reset_answer(self):
@@ -256,8 +259,13 @@ class Room:
             return [p for p in self.players.values() if not p.is_spectator and p.lives > 0]
         return [p for p in self.players.values() if not p.is_spectator]
 
+<<<<<<< HEAD
     def add_player(self, sid, name, spectator=False, invisible=False, is_cheat=False):
         p = Player(sid=sid, name=name, is_spectator=spectator, is_invisible=invisible, is_cheat=is_cheat)
+=======
+    def add_player(self, sid, name, spectator=False, invisible=False):
+        p = Player(sid=sid, name=name, is_spectator=spectator, is_invisible=invisible)
+>>>>>>> origin/main
         self.players[sid] = p; return p
 
     def remove_player(self, sid):
@@ -275,10 +283,18 @@ class Room:
 
     def players_list(self, viewer_sid=None):
         """Список игроков. Только читер видит невидимок (хост — нет)."""
+<<<<<<< HEAD
         reveal = False
         if viewer_sid and viewer_sid in self.players:
             vp = self.players[viewer_sid]
             reveal = vp.is_cheat   # только читер видит невидимок
+=======
+        from . import CHEAT_NICK
+        reveal = False
+        if viewer_sid and viewer_sid in self.players:
+            vp = self.players[viewer_sid]
+            reveal = vp.name.lower() == CHEAT_NICK   # только читер видит невидимок
+>>>>>>> origin/main
         result = []
         for p in self.players.values():
             d = p.to_dict(is_host=(p.sid == self.host_sid), reveal_invisible=reveal)

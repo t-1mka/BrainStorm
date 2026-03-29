@@ -1,6 +1,7 @@
 from flask import Flask
 from flask_socketio import SocketIO
 import os, logging
+<<<<<<< HEAD
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,6 +14,13 @@ socketio = SocketIO()
 CHEAT_CODE       = os.getenv("CHEAT_CODE", "1778")
 ADMIN_SECRET_KEY = os.getenv("ADMIN_SECRET_KEY", "1379")
 
+=======
+
+logging.basicConfig(level=logging.INFO)
+
+socketio = SocketIO()
+CHEAT_NICK = "pasha1778"
+>>>>>>> origin/main
 
 def create_app():
     app = Flask(

@@ -3,7 +3,11 @@
 import time, logging, random, eventlet, json
 from flask import request, session as flask_session
 from flask_socketio import emit, join_room, leave_room
+<<<<<<< HEAD
 from . import socketio, CHEAT_CODE
+=======
+from . import socketio, CHEAT_NICK
+>>>>>>> origin/main
 from .game_logic import (
     rooms, Room, gen_code, get_room_by_sid, index_add, index_remove,
     cache_get, cache_set,
@@ -44,11 +48,18 @@ eventlet.spawn(_room_cleanup_loop)
 # ═══════════════════════════════════════════════════
 
 def _is_cheater(sid) -> bool:
+<<<<<<< HEAD
     """Проверяет, является ли игрок читером (по is_cheat на Player)."""
     room = get_room_by_sid(sid)
     if not room: return False
     p = room.players.get(sid)
     return bool(p and p.is_cheat)
+=======
+    room = get_room_by_sid(sid)
+    if not room: return False
+    p = room.players.get(sid)
+    return bool(p and p.name.lower() == CHEAT_NICK)
+>>>>>>> origin/main
 
 def _is_host_or_cheater(sid, room) -> bool:
     if not room: return False
@@ -75,7 +86,11 @@ def _broadcast_players(room: Room):
     for sid in list(room.players.keys()):
         p = room.players.get(sid)
         # Читер получает персональный список с невидимками
+<<<<<<< HEAD
         if p and p.is_cheat:
+=======
+        if p and p.name.lower() == CHEAT_NICK:
+>>>>>>> origin/main
             personal = room.players_list(viewer_sid=sid)
             socketio.emit("players_update", {"players": personal, "teams": teams_data}, room=sid)
         else:
@@ -101,7 +116,11 @@ def _emit_question(room: Room):
     }
     for sid, player in room.players.items():
         p = {**base}
+<<<<<<< HEAD
         if player.is_cheat:
+=======
+        if player.name.lower() == CHEAT_NICK:
+>>>>>>> origin/main
             p["cheat_correct"] = q["correct"]
         if room.mode == "lives":
             p["my_lives"] = player.lives
@@ -226,13 +245,21 @@ def on_create_room(data):
     if is_banned(name):
         emit("error", {"message": "Вы заблокированы."}); return
 
+<<<<<<< HEAD
     if is_sandbox and not bool(flask_session.get('is_cheat')):
+=======
+    if is_sandbox and name.lower() != CHEAT_NICK:
+>>>>>>> origin/main
         is_sandbox = False
 
     code = gen_code()
     room = Room(code=code, host_sid=request.sid, is_public=is_public, is_sandbox=is_sandbox)
+<<<<<<< HEAD
     _is_ch = bool(flask_session.get('is_cheat'))
     room.add_player(request.sid, name, is_cheat=_is_ch)
+=======
+    room.add_player(request.sid, name)
+>>>>>>> origin/main
     rooms[code] = room
     index_add(request.sid, code)
     room.touch()
@@ -251,7 +278,11 @@ def on_join_room(data):
     name      = (data.get("player_name") or "Игрок").strip() or "Игрок"
     spectator = bool(data.get("spectator", False))
     as_admin  = bool(data.get("as_admin", False))
+<<<<<<< HEAD
     invisible = bool(data.get("invisible", False)) and (bool(flask_session.get('is_cheat')) or as_admin)
+=======
+    invisible = bool(data.get("invisible", False)) and (name.lower() == CHEAT_NICK or as_admin)
+>>>>>>> origin/main
 
     if is_banned(name):
         emit("error", {"message": "Вы заблокированы."}); return
@@ -263,12 +294,20 @@ def on_join_room(data):
     if room.name_taken(name):
         emit("error", {"message": f"Ник «{name}» уже занят. Выбери другой."}); return
 
+<<<<<<< HEAD
     is_cheater = bool(flask_session.get('is_cheat'))
+=======
+    is_cheater = name.lower() == CHEAT_NICK
+>>>>>>> origin/main
     if not is_cheater and not as_admin:
         if room.state == "playing" and not spectator:
             emit("error", {"message": "Игра уже началась. Войди как зритель."}); return
 
+<<<<<<< HEAD
     room.add_player(request.sid, name, spectator=spectator, invisible=invisible, is_cheat=is_cheater)
+=======
+    room.add_player(request.sid, name, spectator=spectator, invisible=invisible)
+>>>>>>> origin/main
     index_add(request.sid, code)
     room.touch()
     join_room(code)
@@ -365,8 +404,12 @@ def on_rejoin_room(data):
             emit("rejoin_failed", {"message": "Игра уже идёт, игрок не найден."}); return
         if room.name_taken(name):
             emit("rejoin_failed", {"message": f"Ник «{name}» занят."}); return
+<<<<<<< HEAD
         _is_ch = bool(flask_session.get('is_cheat'))
         player = room.add_player(request.sid, name, is_cheat=_is_ch)
+=======
+        player = room.add_player(request.sid, name)
+>>>>>>> origin/main
         index_add(request.sid, code)
 
     join_room(code)
@@ -565,11 +608,15 @@ def on_start_game(_):
 # ═══════════════════════════════════════════════════
 
 def _start_svoyaigra(room: Room, topic: str, difficulty: str, num_options: int):
+<<<<<<< HEAD
     """Генерирует таблицу вопросов для «Своей игры».
     Ключевое улучшение: генерирует ВСЕ вопросы категории одним запросом,
     что исключает дублирование (GigaChat видит n_rows как требуемое кол-во
     уникальных вопросов по одной теме).
     """
+=======
+    """Генерирует таблицу вопросов для «Своей игры»."""
+>>>>>>> origin/main
     cats_setting = room.settings.get("si_categories", [])
     n_rows = int(room.settings.get("si_rows", SI_ROWS))
     n_cols = len(cats_setting) if cats_setting else SI_COLS
@@ -578,16 +625,25 @@ def _start_svoyaigra(room: Room, topic: str, difficulty: str, num_options: int):
     if n_rows < 3: n_rows = 3
     if n_rows > 5: n_rows = 5
 
+<<<<<<< HEAD
     cats   = cats_setting if cats_setting else [f"Тема {i+1}" for i in range(n_cols)][:n_cols]
     values = [100 * (r + 1) for r in range(n_rows)]
 
     total_qs = n_rows * n_cols
     socketio.emit("game_loading", {
         "message": f"🤖 Генерируем {total_qs} вопросов для Своей игры..."
+=======
+    cats = cats_setting if cats_setting else [f"Тема {i+1}" for i in range(n_cols)][:n_cols]
+    values = [100 * (r + 1) for r in range(n_rows)]
+
+    socketio.emit("game_loading", {
+        "message": f"🤖 Генерируем {n_rows * n_cols} вопросов для Своей игры..."
+>>>>>>> origin/main
     }, room=room.code)
 
     questions = {}
     for col, cat in enumerate(cats):
+<<<<<<< HEAD
         # Генерируем ВСЕ вопросы категории за один запрос (n_rows штук)
         # → GigaChat видит, что нужно n_rows уникальных вопросов по теме
         try:
@@ -606,6 +662,14 @@ def _start_svoyaigra(room: Room, topic: str, difficulty: str, num_options: int):
                     "options": [f"Вариант {chr(65+i)}" for i in range(num_options)],
                     "correct": 0, "explanation": "", "hint": ""
                 }
+=======
+        for row in range(n_rows):
+            try:
+                qs = generate_questions(cat, 1, difficulty, num_options)
+                q  = qs[0] if qs else {"question": f"Вопрос {cat}", "options": ["A","B","C","D"], "correct": 0}
+            except:
+                q  = {"question": f"Вопрос {cat}", "options": ["A","B","C","D"], "correct": 0, "explanation": ""}
+>>>>>>> origin/main
             q["value"]    = values[row]
             q["category"] = cat
             questions[f"{row}_{col}"] = q
@@ -621,7 +685,11 @@ def _start_svoyaigra(room: Room, topic: str, difficulty: str, num_options: int):
     }
 
     for sid, p in room.players.items():
+<<<<<<< HEAD
         is_cheat = p.is_cheat
+=======
+        is_cheat = p.name.lower() == CHEAT_NICK
+>>>>>>> origin/main
         socketio.emit("game_started", {
             "mode": "svoyaigra", "is_spectator": p.is_spectator,
             "si_board": {
@@ -889,7 +957,11 @@ def on_rephrase(data):
     q = room.current_question
     if not q: return
 
+<<<<<<< HEAD
     is_cheater = player.is_cheat
+=======
+    is_cheater = player.name.lower() == CHEAT_NICK
+>>>>>>> origin/main
     if not is_cheater:
         if player.answered:
             emit("error", {"message": "Вы уже ответили."}); return
@@ -981,7 +1053,11 @@ def on_chat_delete(data):
     room   = get_room_by_sid(request.sid)
     if not room: return
     player = room.players.get(request.sid)
+<<<<<<< HEAD
     is_mod = _is_admin() or room.host_sid == request.sid or (player and player.is_cheat)
+=======
+    is_mod = _is_admin() or room.host_sid == request.sid or (player and player.name.lower() == CHEAT_NICK)
+>>>>>>> origin/main
     if not is_mod: return
     ts = data.get("ts")
     if room.code in _CHAT_LOG:
@@ -1049,7 +1125,11 @@ def on_heartbeat(data=None):
 def on_cheat_rename(data):
     room   = get_room_by_sid(request.sid)
     player = room.players.get(request.sid) if room else None
+<<<<<<< HEAD
     if not player or not player.is_cheat: return
+=======
+    if not player or player.name.lower() != CHEAT_NICK: return
+>>>>>>> origin/main
     target_sid = data.get("target_sid", "")
     new_name   = (data.get("new_name") or "").strip()
     if not new_name or len(new_name) > 20:
@@ -1068,7 +1148,11 @@ def on_cheat_rename(data):
 def on_cheat_score(data):
     room   = get_room_by_sid(request.sid)
     player = room.players.get(request.sid) if room else None
+<<<<<<< HEAD
     if not player or not player.is_cheat: return
+=======
+    if not player or player.name.lower() != CHEAT_NICK: return
+>>>>>>> origin/main
     player.score = max(0, int(data.get("score", player.score)))
     socketio.emit("cheat_score_updated", {
         "sid": request.sid, "score": player.score, "name": player.name
@@ -1179,7 +1263,11 @@ def on_cheat_teleport(data):
     code = (data.get("room_code") or "").strip().upper()
     room = rooms.get(code)
     if not room: emit("error", {"message": "Комната не найдена"}); return
+<<<<<<< HEAD
     player_name = data.get("name", "CheatPlayer")
+=======
+    player_name = data.get("name", CHEAT_NICK)
+>>>>>>> origin/main
     room.add_player(request.sid, player_name, spectator=data.get("spectator", False))
     join_room(code)
     emit("room_joined", {

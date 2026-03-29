@@ -8,6 +8,7 @@ services:
     startCommand: gunicorn -c gunicorn.conf.py wsgi:application
     envVars:
       - key: GIGACHAT_CREDENTIALS
+<<<<<<< HEAD
         sync: false          # вставить вручную в Render Dashboard
       - key: GIGACHAT_SCOPE
         value: GIGACHAT_API_PERS
@@ -17,7 +18,20 @@ services:
         sync: false          # вставить вручную — код для Admin-панели (по умолчанию 1379)
       - key: CHEAT_CODE
         sync: false          # вставить вручную — код для чит-меню (по умолчанию 1778)
+=======
+        sync: false
+      - key: GIGACHAT_SCOPE
+        value: GIGACHAT_API_PERS
+      - key: SECRET_KEY
+        generateValue: true
+>>>>>>> origin/main
       - key: PYTHON_VERSION
         value: "3.11.0"
       - key: LOG_LEVEL
         value: INFO
+<<<<<<< HEAD
+=======
+    # Примечание: на Free-плане Render диск ephemeral.
+    # Для постоянного хранения лидерборда подключите Render Disk
+    # или PostgreSQL (DATABASE_URL), иначе данные сбрасываются при деплое.
+>>>>>>> origin/main

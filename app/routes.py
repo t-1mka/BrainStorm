@@ -21,9 +21,13 @@ from .learn_mode import generate_learn_questions, extract_text_from_url
 
 logger    = logging.getLogger(__name__)
 bp        = Blueprint("main", __name__)
+<<<<<<< HEAD
 
 # Читаем коды из приложения (они уже загружены в __init__)
 from . import ADMIN_SECRET_KEY, CHEAT_CODE
+=======
+ADMIN_KEY = os.getenv("ADMIN_SECRET_KEY", "1379")
+>>>>>>> origin/main
 
 
 def _admin():
@@ -32,6 +36,10 @@ def _admin():
     return None
 
 def _auth_user():
+<<<<<<< HEAD
+=======
+    """Возвращает username из сессии или None."""
+>>>>>>> origin/main
     return session.get("username")
 
 
@@ -86,7 +94,11 @@ def api_me():
     return jsonify({"logged_in": True, "user": user})
 
 
+<<<<<<< HEAD
 # ─── Лидерборд ────────────────────────────────────────────────────────────────
+=======
+# ─── Лидерборд и ранги ───────────────────────────────────────────────────────
+>>>>>>> origin/main
 
 @bp.route("/api/leaderboard")
 def api_leaderboard():
@@ -128,7 +140,11 @@ def api_check_session():
     return jsonify({"ok": True, "already_in": existing is not None})
 
 
+<<<<<<< HEAD
 # ─── UGC ─────────────────────────────────────────────────────────────────────
+=======
+# ─── UGC (пользовательские вопросы) ──────────────────────────────────────────
+>>>>>>> origin/main
 
 @bp.route("/api/ugc/questions")
 def api_ugc_list():
@@ -158,6 +174,10 @@ def api_ugc_create():
         difficulty = int(body.get("difficulty",2)),
     )
     if ok:
+<<<<<<< HEAD
+=======
+        # Начисляем монеты за создание
+>>>>>>> origin/main
         add_coins(u, 5)
         new_achs = check_and_unlock_achievements(u)
         unlock_achievement(u, "ugc_creator")
@@ -197,6 +217,10 @@ def api_campaign_levels():
     u = _auth_user()
     if u:
         return jsonify(get_campaign_progress(u))
+<<<<<<< HEAD
+=======
+    # Гость видит уровни, все заблокированы
+>>>>>>> origin/main
     return jsonify({
         "levels": [{**l,"stars":0,"best_score":0,"locked":True} for l in CAMPAIGN_LEVELS],
         "total_stars": 0
@@ -212,12 +236,17 @@ def api_campaign_result():
     correct     = int(body.get("correct",0))
     total       = int(body.get("total_questions",1))
     result      = save_campaign_result(u, level_id, score, correct, total)
+<<<<<<< HEAD
+=======
+    # Достижения
+>>>>>>> origin/main
     if result["stars"] == 3:
         unlock_achievement(u, "perfect_level")
     new_achs = check_and_unlock_achievements(u)
     result["new_achievements"] = new_achs
     return jsonify(result)
 
+<<<<<<< HEAD
 @bp.route("/api/campaign/start", methods=["POST"])
 def api_campaign_start():
     u = _auth_user()
@@ -240,6 +269,8 @@ def api_campaign_start():
     )
     return jsonify({"questions": questions, "level": level})
 
+=======
+>>>>>>> origin/main
 
 # ─── Режим обучения ───────────────────────────────────────────────────────────
 
@@ -253,6 +284,10 @@ def api_learn_text():
     questions = generate_learn_questions(content, num)
     if not questions:
         return jsonify({"error":"Не удалось сгенерировать вопросы. Попробуй ещё раз."}), 500
+<<<<<<< HEAD
+=======
+    # Достижение за первый запуск режима обучения
+>>>>>>> origin/main
     u = _auth_user()
     if u:
         unlock_achievement(u, "learn_mode")
@@ -287,7 +322,11 @@ def api_achievements():
     return jsonify({"achievements": get_achievements(u)})
 
 
+<<<<<<< HEAD
 # ─── Магазин ─────────────────────────────────────────────────────────────────
+=======
+# ─── Магазин (монеты) ─────────────────────────────────────────────────────────
+>>>>>>> origin/main
 
 SHOP_ITEMS = {
     "hint_free":     {"name":"Бесплатная подсказка",    "cost":30,  "desc":"Подсказка без списания очков"},
@@ -316,6 +355,7 @@ def api_shop_buy():
     return jsonify({"ok": True, "item": item_id, "coins_left": user["coins"] if user else 0})
 
 
+<<<<<<< HEAD
 # ─── Чит-меню (активация по коду) ────────────────────────────────────────────
 
 @bp.route("/verify_cheat", methods=["POST"])
@@ -334,12 +374,18 @@ def api_cheat_logout():
     return jsonify({"ok": True})
 
 
+=======
+>>>>>>> origin/main
 # ─── Администрирование ────────────────────────────────────────────────────────
 
 @bp.route("/verify_admin", methods=["POST"])
 def verify_admin():
     body = request.get_json(silent=True) or {}
+<<<<<<< HEAD
     if str(body.get("key","")).strip() == ADMIN_SECRET_KEY:
+=======
+    if str(body.get("key","")).strip() == ADMIN_KEY:
+>>>>>>> origin/main
         session["is_admin"] = True
         return jsonify({"ok": True})
     return jsonify({"ok": False}), 403
@@ -445,3 +491,31 @@ def api_cheat_stats(code):
         "total_answered": sum(1 for p in r.players.values() if p.answered),
         "total_active": len(r.active_players)
     })
+<<<<<<< HEAD
+=======
+
+
+@bp.route("/api/campaign/start", methods=["POST"])
+def api_campaign_start():
+    """Генерирует вопросы для уровня кампании."""
+    u = _auth_user()
+    if not u: return jsonify({"error":"Не авторизован"}), 401
+    body     = request.get_json(silent=True) or {}
+    level_id = int(body.get("level_id", 0))
+    level    = next((l for l in CAMPAIGN_LEVELS if l["id"]==level_id), None)
+    if not level:
+        return jsonify({"error": "Уровень не найден"}), 404
+    # Проверяем доступность уровня
+    prog = get_campaign_progress(u)
+    total_stars = prog["total_stars"]
+    if total_stars < level["req_stars"]:
+        return jsonify({"error": f"Нужно {level['req_stars']} звёзд"}), 403
+    from .ai_client import generate_questions
+    questions = generate_questions(
+        topic      = level["topic"],
+        count      = level["questions"],
+        difficulty = level["difficulty"],
+        num_options = 4
+    )
+    return jsonify({"questions": questions, "level": level})
+>>>>>>> origin/main

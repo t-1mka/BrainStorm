@@ -75,6 +75,7 @@ body {
 .bg-mesh {
   position: fixed; inset: 0; z-index: 0; pointer-events: none;
   background:
+<<<<<<< HEAD
     radial-gradient(ellipse 60% 50% at 12% 6%,   rgba(139,92,246,0.22) 0%, transparent 60%),
     radial-gradient(ellipse 50% 65% at 90% 85%,  rgba(192,132,252,0.15) 0%, transparent 60%),
     radial-gradient(ellipse 40% 35% at 75% 15%,  rgba(244,114,182,0.09) 0%, transparent 55%),
@@ -85,6 +86,11 @@ body {
 @keyframes bg-breathe {
   0%   { opacity: 0.7; }
   100% { opacity: 1;   }
+=======
+    radial-gradient(ellipse 70% 55% at 15% 8%,  rgba(139,92,246,0.14) 0%, transparent 65%),
+    radial-gradient(ellipse 55% 70% at 88% 82%, rgba(192,132,252,0.09) 0%, transparent 65%),
+    radial-gradient(ellipse 90% 90% at 50% 50%, var(--bg2) 0%, var(--bg) 100%);
+>>>>>>> origin/main
 }
 
 /* Пульсирующие кольца при событиях */
@@ -1363,6 +1369,7 @@ body {
   background: rgba(139,92,246,.07); margin-bottom: 6px;
   font-size: .83rem;
 }
+<<<<<<< HEAD
 
 /* ══════════════════════════════════════════════════════════════
    УЛУЧШЕНИЯ ИНТЕРФЕЙСА v2 — фон, анимации, детали
@@ -1598,3 +1605,5 @@ body {
   .code-val { letter-spacing: 3px !important; }
   .bg-mesh::after { display: none; } /* убираем сетку на маленьких экранах */
 }
+=======
+>>>>>>> origin/main

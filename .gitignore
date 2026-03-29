@@ -8,6 +8,7 @@ venv/
 env/
 *.egg-info/
 
+<<<<<<< HEAD
 # Секреты — НИКОГДА не коммитить
 .env
 
@@ -16,13 +17,33 @@ env/
 logs/
 data/
 *.db
+=======
+# Настройки (содержат секреты!)
+.env
+
+# Логи
+*.log
+logs/
+>>>>>>> origin/main
 
 # IDE
 .vscode/
 .idea/
 *.swp
+<<<<<<< HEAD
 .DS_Store
 Thumbs.db
 
 # Render
 .render/
+=======
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Render / деплой
+.render/
+data/
+*.db
+>>>>>>> origin/main

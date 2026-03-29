@@ -111,12 +111,20 @@
           <div class="settings-row"><div><div class="settings-label">Звуки событий</div></div><button class="toggle on" id="toggle-event-sound"></button></div>
         </div>
 
+<<<<<<< HEAD
         <!-- 💀 Чит-меню — активируется кодом -->
         <div class="spage" id="spage-cheat">
           <h3 class="spage-title">💀 Чит-меню <span style="font-size:.7rem;color:var(--red);font-weight:400">⚡ режим разработчика</span></h3>
           <div style="background:rgba(248,113,113,0.07);border:1px solid rgba(248,113,113,0.2);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:.82rem;color:var(--red);display:flex;justify-content:space-between;align-items:center;gap:8px">
             <span>⚠️ Все изменения мгновенны. Осторожно.</span>
             <button class="btn btn-sm" style="background:rgba(248,113,113,0.2);color:var(--red);border:1px solid rgba(248,113,113,0.4);flex-shrink:0" onclick="deactivateCheat()">Выйти</button>
+=======
+        <!-- 💀 Читы — только для Pasha1778 -->
+        <div class="spage" id="spage-cheat">
+          <h3 class="spage-title">💀 Чит-меню <span style="font-size:.7rem;color:var(--red);font-weight:400">только pasha1778</span></h3>
+          <div style="background:rgba(248,113,113,0.07);border:1px solid rgba(248,113,113,0.2);border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:.82rem;color:var(--red)">
+            ⚠️ Все изменения применяются мгновенно. Используй осторожно.
+>>>>>>> origin/main
           </div>
 
           <!-- Секция: Игровые читы -->
@@ -172,6 +180,7 @@
         <div class="spage" id="spage-admin">
           <h3 class="spage-title">🔑 Администратор</h3>
           <div id="admin-key-section">
+<<<<<<< HEAD
             <p style="color:var(--text-muted);font-size:.82rem;margin-bottom:8px">Введите код для активации нужного режима</p>
             <p style="color:var(--text-muted);font-size:.88rem;margin-bottom:12px">Введите ключ администратора</p>
             <div class="admin-key-wrap">
@@ -179,6 +188,14 @@
               <button class="btn btn-primary btn-sm" id="btn-admin-activate">🔑 Ввести</button>
             </div>
             <p id="admin-key-error" class="field-error" style="display:none">❌ Неверный код</p>
+=======
+            <p style="color:var(--text-muted);font-size:.88rem;margin-bottom:12px">Введите ключ администратора</p>
+            <div class="admin-key-wrap">
+              <input type="password" id="admin-key-input" class="inp" placeholder="Секретный ключ" maxlength="20">
+              <button class="btn btn-primary btn-sm" id="btn-admin-activate">Войти</button>
+            </div>
+            <p id="admin-key-error" class="field-error" style="display:none">Неверный ключ</p>
+>>>>>>> origin/main
           </div>
 
           <div id="admin-panel-section" style="display:none">
