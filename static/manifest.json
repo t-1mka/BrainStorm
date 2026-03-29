@@ -1,0 +1,13 @@
+{
+  "name": "Мозговой Штурм",
+  "short_name": "BrainStorm",
+  "description": "Викторина с искусственным интеллектом",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d0b1e",
+  "theme_color": "#8e2de2",
+  "icons": [
+    { "src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
