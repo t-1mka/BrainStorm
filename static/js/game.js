@@ -864,24 +864,38 @@ async function deactivateCheat(){
 function initAdminUI(){
   on($("btn-admin-activate"),"click",async()=>{
     const key=($("admin-key-input").value||"").trim(); if(!key)return;
+    console.log("🔑 Activation attempt:", key);
     try {
       const res = await fetch('/api/admin/activate', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({key})
+        body: JSON.stringify({key: key})
       });
       const data = await res.json();
+      console.log("📩 API response:", data);
       if (data.ok) {
-        isAdmin = true;
-        $("admin-key-section").style.display="none";
-        $("admin-panel-section").style.display="";
-        loadAdminRooms();
-        toast("✅ Режим администратора активен");
-        NeuralBg.pulse("#8b5cf6",1.0);
+        if (data.role === 'admin') {
+          isAdmin = true;
+          $("admin-key-section").style.display="none";
+          $("admin-panel-section").style.display="";
+          loadAdminRooms();
+          toast("✅ Режим администратора активен");
+          NeuralBg.pulse("#8b5cf6",1.0);
+        } else if (data.role === 'cheat') {
+          isTester = true;
+          const btn = $('snav-cheat');
+          if (btn) btn.classList.remove('snav-hidden');
+          if ($('sandbox-row')) $('sandbox-row').style.display = '';
+          initCheatMenu(profile.name || '');
+          toast("🔓 Чит-меню активировано", 3000);
+          NeuralBg.pulse('#fbbf24', 1.2);
+        }
       } else {
+        console.error("❌ Activation failed:", data.error);
         $("admin-key-error").style.display="";
       }
     } catch(e) {
+      console.error("❌ API error:", e);
       $("admin-key-error").style.display="";
     }
   });

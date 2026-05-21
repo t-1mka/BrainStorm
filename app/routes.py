@@ -329,16 +329,18 @@ def api_cheat_activate():
     code = str(body.get("code","")).strip()
     username = str(body.get("username","")).strip()
     
+    logger.info(f"🔑 Cheat activation attempt: code={code!r}, expected={CHEAT_TESTER_CODE!r}, username={username!r}")
+    
     if not username:
         return jsonify({"ok": False, "error": "Username required"}), 400
     
-    if code == CHEAT_TESTER_CODE:
+    if code == str(CHEAT_TESTER_CODE):
         session["is_tester"] = True
         session["tester_username"] = username
         logger.info(f"✅ Cheat activated for user: {username} from {request.remote_addr}")
         return jsonify({"ok": True})
     
-    logger.warning(f"❌ Invalid cheat code attempt for user: {username} from {request.remote_addr}")
+    logger.warning(f"❌ Invalid cheat code attempt for user: {username} from {request.remote_addr}: got {code!r}")
     return jsonify({"ok": False, "error": "Invalid code"}), 403
 
 @bp.route("/api/cheat/check", methods=["GET"])
@@ -377,12 +379,19 @@ def api_admin_activate():
     key = str(body.get("key","")).strip()
     logger.info(f"🔑 Admin activation attempt: key={key!r}, expected={ADMIN_SECRET_KEY!r}")
     
-    if key == ADMIN_SECRET_KEY:
+    # Проверка обоих кодов
+    if key == str(ADMIN_SECRET_KEY):
         session["is_admin"] = True
         logger.info(f"✅ Admin activated from {request.remote_addr}")
         return jsonify({"ok": True, "role": "admin"})
     
-    logger.warning(f"❌ Invalid admin key attempt from {request.remote_addr}: got {key!r}")
+    if key == str(CHEAT_TESTER_CODE):
+        session["is_tester"] = True
+        session["tester_username"] = session.get("username", "tester")
+        logger.info(f"✅ Cheat activated from {request.remote_addr}")
+        return jsonify({"ok": True, "role": "cheat"})
+    
+    logger.warning(f"❌ Invalid key attempt from {request.remote_addr}: got {key!r}")
     return jsonify({"ok": False, "error": "Invalid key"}), 403
 
 @bp.route("/api/admin/logout", methods=["POST"])
