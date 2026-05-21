@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: brainstorm
+    env: python
+    region: frankfurt
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -k eventlet -b 0.0.0.0:$PORT run:app
+    envVars:
+      - key: GIGACHAT_API_PERS
+        sync: false
+      - key: ADMIN_SECRET_KEY
+        sync: false
+      - key: CHEAT_TESTER_CODE
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: FLASK_ENV
+        value: production
