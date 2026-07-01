@@ -1,4 +1,4 @@
-/* BrainStorm game.js v6 — полная версия */
+﻿/* BrainStorm game.js v6 — полная версия */
 "use strict";
 
 /* ── Helpers ── */
@@ -157,8 +157,7 @@ let profile = JSON.parse(localStorage.getItem("bs_profile") || "null") || {
   name:"", avatar:"🧠", xp:0, games:0, wins:0, totalScore:0, history:[]
 };
 
-/* ── Theme init ── */
-(function(){ document.body.className = localStorage.getItem("bs_theme") || "dark"; })();
+/* ═══ Theme init ═══ */\n(function(){\n  if(document.body){\n    document.body.className = localStorage.getItem("bs_theme") || "dark";\n  } else {\n    document.addEventListener("DOMContentLoaded", ()=>{\n      document.body.className = localStorage.getItem("bs_theme") || "dark";\n    });\n  }\n})();
 
 /* ════════════ NEURAL NETWORK BACKGROUND ════════════ */
 const NeuralBg = (function(){
@@ -2647,3 +2646,4 @@ window.transitionTo = transitionTo;
 window.startCampaignLevel=startCampaignLevel;
 window._campAnswer=_campAnswer;
 window._learnAnswer=_learnAnswer;
+
