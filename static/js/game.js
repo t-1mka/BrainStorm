@@ -2620,7 +2620,7 @@ window.addEventListener("DOMContentLoaded",()=>{
   };
 });
 
-window.showView = showView;
+// Не сбрасываем showView — она уже переопределена выше с загрузкой кампании/UGC
 window.transitionTo = transitionTo;
 window.startCampaignLevel=startCampaignLevel;
 window._campAnswer=_campAnswer;
