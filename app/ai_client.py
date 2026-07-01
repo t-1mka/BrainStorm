@@ -89,18 +89,19 @@ def build_hint_prompt(question_text: str) -> str:
 
 def _call_gigachat(user_prompt: str, system: str = SYSTEM_PROMPT) -> str:
     creds = os.getenv("GIGACHAT_CREDENTIALS", "")
-    scope = os.getenv("GIGACHAT_SCOPE", "GIGACHAT_API_PERS")
     if not creds:
         raise RuntimeError("GIGACHAT_CREDENTIALS не задан")
     from gigachat import GigaChat
-    from gigachat.models import Chat, Messages, MessagesRole
-    msgs = [
-        Messages(role=MessagesRole.SYSTEM, content=system),
-        Messages(role=MessagesRole.USER, content=user_prompt),
-    ]
-    with GigaChat(credentials=creds, scope=scope, verify_ssl_certs=False) as gc:
-        resp = gc.chat(Chat(messages=msgs))
-    return resp.choices[0].message.content
+    with GigaChat(credentials=creds, verify_ssl_certs=False) as gc:
+        response = gc.chat(
+            [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_prompt}
+            ],
+            functions=[]
+        )
+        content = response.choices[0].message.content
+    return content.strip()
 
 
 def _extract_json(raw: str) -> str:

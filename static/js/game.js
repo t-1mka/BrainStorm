@@ -650,10 +650,14 @@ function _applyBgColor(color){
 
 /* ════════════ CREATE / JOIN ════════════ */
 function handleCreate(){
+  console.log("🎮 handleCreate called");
   const name=($("create-name").value||"").trim();
+  console.log("👤 Name:", name);
   if(!name){ $("create-name-error").style.display=""; return; }
   $("create-name-error").style.display="none";
   profile.name=name; saveProfile(); initCheatMenu(name);
+  console.log("📡 Emitting create_room...");
+  console.log("🔌 Socket connected:", socket && socket.connected);
   socket.emit("create_room",{player_name:name, is_public:!!$("toggle-public")?.classList.contains("on"), is_sandbox:!!$("toggle-sandbox")?.classList.contains("on")});
   Sounds.create();
 }
@@ -2163,11 +2167,16 @@ function _renderAuthProfile(user) {
 }
 
 function initAuthUI() {
+  console.log("🔐 initAuthUI called");
   on($("btn-auth-login"), "click", async()=>{
+    console.log("🔑 Login button clicked");
     const u = ($("auth-login-name").value||"").trim();
     const p = ($("auth-login-pass").value||"").trim();
+    console.log("👤 Login:", u);
     if (!u||!p) return;
+    console.log("📡 Sending login request...");
     const d = await fetch("/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:p})}).then(r=>r.json()).catch(()=>({}));
+    console.log("📥 Login response:", d);
     if (d.ok) {
       _setAuthUser(d.user); toast(`✅ Добро пожаловать, ${d.user.username}!`);
       showView("view-main");
@@ -2176,10 +2185,14 @@ function initAuthUI() {
     }
   });
   on($("btn-auth-register"),"click",async()=>{
+    console.log("✨ Register button clicked");
     const u = ($("auth-reg-name").value||"").trim();
     const p = ($("auth-reg-pass").value||"").trim();
+    console.log("👤 Register:", u);
     if (!u||!p) return;
+    console.log("📡 Sending register request...");
     const d = await fetch("/api/auth/register",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:p})}).then(r=>r.json()).catch(()=>({}));
+    console.log("📥 Register response:", d);
     if (d.ok) {
       _setAuthUser(d.user); toast(`🎉 Аккаунт создан! Добро пожаловать!`);
       showView("view-main");
@@ -2211,6 +2224,7 @@ let _campCurrent  = null;   // {level, questions, idx, score, correct}
 let _campTimer    = null;
 
 async function loadCampaign() {
+  console.log("📋 loadCampaign called, _authUser:", _authUser);
   if (!_authUser) {
     const prompt = $("campaign-login-prompt");
     if (prompt) prompt.style.display="";
@@ -2220,9 +2234,11 @@ async function loadCampaign() {
   const prompt = $("campaign-login-prompt");
   if (prompt) prompt.style.display="none";
   try {
+    console.log("📡 Fetching campaign levels...");
     _campData = await fetch("/api/campaign/levels").then(r=>r.json());
+    console.log("📥 Campaign data:", _campData);
     _renderCampaignMap(_campData);
-  } catch(e) { toast("❌ Ошибка загрузки кампании"); }
+  } catch(e) { toast("❌ Ошибка загрузки кампании"); console.error("Campaign error:", e); }
 }
 
 function _renderCampaignMap(data) {
@@ -2593,12 +2609,18 @@ window.ugcModerate=async(id,approve)=>{
    ИНИЦИАЛИЗАЦИЯ
    ════════════════════════════════════════════════════════ */
 window.addEventListener("DOMContentLoaded",()=>{
+  // Инициализируем UI всегда, не ждём auth
+  initAuthUI();
+  initCampaignUI();
+  initLearnUI();
+  initUgcUI();
+  
+  // Auth проверяем параллельно
   initAuth().then(()=>{
-    initAuthUI();
-    initCampaignUI();
-    initLearnUI();
-    initUgcUI();
-  });
+    // Обновляем UI если пользователь авторизован
+    if(_authUser) _renderAuthBar(_authUser);
+  }).catch(()=>{});
+  
   checkAuthStatus();  // Проверка статуса читера/админа
   // При открытии campaign view — загружаем карту
   const origShowView = window.showView;
