@@ -5,17 +5,27 @@ services:
     region: frankfurt
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python run.py
+    startCommand: gunicorn --worker-class eventlet -w 1 wsgi:application --bind 0.0.0.0:$PORT
     envVars:
-      - key: GIGACHAT_API_PERS
-        sync: false
+      - key: SECRET_KEY
+        value: brainstorm-super-secret-key-change-me-in-production
       - key: ADMIN_SECRET_KEY
         sync: false
       - key: CHEAT_TESTER_CODE
         sync: false
-      - key: PYTHON_VERSION
-        value: "3.11.0"
+      - key: GIGACHAT_CLIENT_ID
+        sync: false
+      - key: GIGACHAT_CREDENTIALS
+        sync: false
+      - key: GIGACHAT_MODEL
+        value: GigaChat
+      - key: GIGACHAT_SCOPE
+        value: GIGACHAT_API_PERS
+      - key: PORT
+        value: 5000
+      - key: HOST
+        value: 0.0.0.0
       - key: LOG_LEVEL
         value: INFO
-      - key: FLASK_ENV
-        value: production
+      - key: DEBUG
+        value: false

@@ -15,7 +15,7 @@ from .user_db import (
     vote_ugc, report_ugc, admin_moderate_ugc, get_ugc_pending,
     get_campaign_progress, save_campaign_result, CAMPAIGN_LEVELS,
     get_achievements, check_and_unlock_achievements, unlock_achievement,
-    ACHIEVEMENTS
+    ACHIEVEMENTS, _db_conn
 )
 from .learn_mode import generate_learn_questions, extract_text_from_url
 
@@ -606,30 +606,26 @@ def api_admin_edit_user(username):
     if not user:
         return jsonify({"error": "User not found"}), 404
     
-    # Что можно редактировать
-    if "display_name" in body:
-        new_name = str(body["display_name"]).strip()
-        if len(new_name) > 50:
-            return jsonify({"error": "Слишком длинное имя"}), 400
-        # Обновляем в БД (нужно добавить метод в user_db)
-        # db_execute("UPDATE users SET display_name=? WHERE username=?", (new_name, username))
-    
+    # Редактирование монет и XP
     if "coins" in body:
         new_coins = int(body["coins"])
         if new_coins < 0:
             return jsonify({"error": "Монеты не могут быть отрицательными"}), 400
-        # db_execute("UPDATE users SET coins=? WHERE username=?", (new_coins, username))
+        try:
+            with _db_conn() as c:
+                c.execute("UPDATE users SET coins=? WHERE username=?", (new_coins, username))
+        except Exception as e:
+            logger.error("admin edit coins: %s", e)
     
     if "xp" in body:
         new_xp = int(body["xp"])
         if new_xp < 0:
             return jsonify({"error": "XP не может быть отрицательным"}), 400
-        # db_execute("UPDATE users SET xp=? WHERE username=?", (new_xp, username))
-    
-    if "avatar" in body:
-        # Проверка что аватар из списка допустимых
-        avatar = str(body["avatar"]).strip()
-        # db_execute("UPDATE users SET avatar=? WHERE username=?", (avatar, username))
+        try:
+            with _db_conn() as c:
+                c.execute("UPDATE users SET xp=? WHERE username=?", (new_xp, username))
+        except Exception as e:
+            logger.error("admin edit xp: %s", e)
     
     logger.info(f"✏️ Admin edited user: {username}")
     
@@ -642,12 +638,21 @@ def api_admin_delete_user(username):
     err = _admin()
     if err: return err
     
-    if not confirm(f"Вы уверены что хотите удалить аккаунт {username}?", body):
-        return jsonify({"error": "Confirmation required"}), 400
+    body = request.get_json(silent=True) or {}
+    confirm = str(body.get("confirm","")).strip()
+    
+    if confirm != "DELETE":
+        return jsonify({"error": "Подтвердите удаление: отправьте {\"confirm\": \"DELETE\"}"}), 400
     
     # Удаление из БД
-    # db_execute("DELETE FROM users WHERE username=?", (username,))
-    # db_execute("DELETE FROM user_stats WHERE username=?", (username,))
+    try:
+        with _db_conn() as c:
+            c.execute("DELETE FROM users WHERE username=?", (username,))
+            c.execute("DELETE FROM achievements WHERE username=?", (username,))
+            c.execute("DELETE FROM campaign_progress WHERE username=?", (username,))
+    except Exception as e:
+        logger.error("admin delete user: %s", e)
+        return jsonify({"error": "Ошибка при удалении"}), 500
     
     logger.warning(f"🗑️ Admin deleted user: {username}")
     
@@ -680,48 +685,35 @@ def api_public_profile(username):
         return jsonify({"error": "Пользователь не найден"}), 404
     
     user["level"] = get_level_from_xp(user.get("xp", 0))
-    user["achievements"] = get_achievements(username)
-    user["campaign_progress"] = get_campaign_progress(username)
+    achievements = get_achievements(username)
+    campaign = get_campaign_progress(username)
     
     # Не показываем чувствительные данные
     public_profile = {
         "username": user["username"],
-        "display_name": user.get("display_name", user["username"]),
-        "avatar": user.get("avatar", "default"),
         "total_score": user["total_score"],
         "games_played": user["games_played"],
         "wins": user["wins"],
         "coins": user["coins"],
         "xp": user["xp"],
         "level": user["level"],
-        "achievements_count": len(user["achievements"]),
-        "rank": get_player_rank(username)["rank"]
+        "achievements_count": len(achievements),
+        "rank": get_player_rank(username).get("rank", 0)
     }
     
     return jsonify({"profile": public_profile})
 
 @bp.route("/api/profile/update", methods=["POST"])
 def api_update_profile():
-    """Обновить свой профиль."""
+    """Обновить свой профиль (пока только аватар)."""
     u = _auth_user()
     if not u:
         return jsonify({"error": "Не авторизован"}), 401
     
     body = request.get_json(silent=True) or {}
     
-    # Что может менять сам пользователь
-    if "display_name" in body:
-        new_name = str(body["display_name"]).strip()
-        if len(new_name) > 50 or len(new_name) < 2:
-            return jsonify({"error": "Имя должно быть 2-50 символов"}), 400
-        # db_execute("UPDATE users SET display_name=? WHERE username=?", (new_name, u))
-    
-    if "avatar" in body:
-        avatar = str(body["avatar"]).strip()
-        # Валидация аватара
-        # db_execute("UPDATE users SET avatar=? WHERE username=?", (avatar, u))
-    
-    logger.info(f"✏️ User updated profile: {u}")
+    # Пока ничего не меняем - таблица users не имеет этих полей
+    # Можно добавить в будущем через миграцию БД
     
     updated_user = get_user(u)
     return jsonify({"ok": True, "profile": updated_user})
@@ -739,9 +731,15 @@ def api_delete_profile():
     if confirm != "DELETE_MY_ACCOUNT":
         return jsonify({"error": "Подтвердите удаление: DELETE_MY_ACCOUNT"}), 400
     
-    # Удаление аккаунта
-    # db_execute("DELETE FROM users WHERE username=?", (u,))
-    # db_execute("DELETE FROM user_stats WHERE username=?", (u,))
+    # Удаление из БД
+    try:
+        with _db_conn() as c:
+            c.execute("DELETE FROM users WHERE username=?", (u,))
+            c.execute("DELETE FROM achievements WHERE username=?", (u,))
+            c.execute("DELETE FROM campaign_progress WHERE username=?", (u,))
+    except Exception as e:
+        logger.error("delete user: %s", e)
+    
     session.pop("username", None)
     
     logger.warning(f"🗑️ User deleted account: {u}")
