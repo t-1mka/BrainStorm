@@ -405,18 +405,6 @@
       <span style="font-size:1.5rem">🗺️</span>
       <span>Кампания</span>
     </button>
-    <button class="mode-card-btn" onclick="showView('view-learn')">
-      <span style="font-size:1.5rem">📚</span>
-      <span>Обучение</span>
-    </button>
-    <button class="mode-card-btn" onclick="showView('view-ugc')">
-      <span style="font-size:1.5rem">✏️</span>
-      <span>Создать вопрос</span>
-    </button>
-    <button class="mode-card-btn" id="btn-show-auth" onclick="showView('view-auth')">
-      <span style="font-size:1.5rem" id="auth-mode-icon">👤</span>
-      <span id="auth-mode-label">Войти</span>
-    </button>
   </div>
 
   <div class="tab-switcher">
@@ -887,109 +875,6 @@
     </div>
   </div>
 </div>
-
-<!-- ══ LEARN VIEW ══ -->
-<div id="view-learn" class="view">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-    <button class="btn btn-ghost btn-sm" onclick="showView('view-main')">← Назад</button>
-    <h2 style="font-size:1.1rem;margin:0">📚 Режим обучения</h2>
-  </div>
-  <div id="learn-input-panel" class="card">
-    <p style="color:var(--text-muted);font-size:.85rem;margin-bottom:14px">Вставь текст или URL статьи — AI сгенерирует викторину (макс. 2500 символов, 8 вопросов)</p>
-    <div class="tab-switcher" style="margin-bottom:12px">
-      <button class="tab-btn active" data-tab="learn-text">📝 Текст</button>
-      <button class="tab-btn" data-tab="learn-url">🔗 URL</button>
-    </div>
-    <div id="tab-learn-text" class="tab-panel active">
-      <textarea id="learn-text-input" class="inp" rows="6" placeholder="Вставьте любой текст на русском языке..." style="resize:vertical;min-height:120px"></textarea>
-    </div>
-    <div id="tab-learn-url" class="tab-panel" style="display:none">
-      <input id="learn-url-input" class="inp" placeholder="https://..." type="url">
-      <p style="font-size:.75rem;color:var(--text-muted);margin-top:6px">Работает с Википедией, новостями и публичными статьями</p>
-    </div>
-    <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
-      <label style="font-size:.83rem;color:var(--text-muted)">Вопросов:</label>
-      <input id="learn-num-q" class="inp" type="number" min="3" max="8" value="6" style="width:64px;text-align:center">
-      <button class="btn btn-primary" id="btn-learn-generate" style="flex:1">🤖 Сгенерировать</button>
-    </div>
-    <div id="learn-error" class="field-error" style="display:none"></div>
-  </div>
-  <!-- Игра в режиме обучения -->
-  <div id="learn-game-panel" style="display:none">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <b>Вопрос <span id="learn-q-num">1</span> / <span id="learn-q-total">6</span></b>
-      <span>✅ <b id="learn-correct-cnt">0</b></span>
-    </div>
-    <div class="card" id="learn-question-card">
-      <div id="learn-question-text" style="font-size:1rem;font-weight:600;line-height:1.5;margin-bottom:16px"></div>
-      <div id="learn-options" class="options-grid"></div>
-      <div id="learn-explanation" style="display:none;margin-top:12px;padding:10px;background:rgba(139,92,246,.1);border-radius:8px;font-size:.84rem"></div>
-    </div>
-    <button class="btn btn-primary btn-full mt-12" id="btn-learn-next" style="display:none">Следующий →</button>
-  </div>
-  <!-- Итоги обучения -->
-  <div id="learn-results-panel" style="display:none" class="card">
-    <h3 style="text-align:center;margin-bottom:12px">📊 Итоги обучения</h3>
-    <div id="learn-results-body"></div>
-    <div style="display:flex;gap:8px;margin-top:14px">
-      <button class="btn btn-secondary btn-full" id="btn-learn-retry">🔄 Пройти снова</button>
-      <button class="btn btn-ghost btn-full" onclick="showView('view-main')">🏠 Главная</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══ UGC VIEW ══ -->
-<div id="view-ugc" class="view">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-    <button class="btn btn-ghost btn-sm" onclick="showView('view-main')">← Назад</button>
-    <h2 style="font-size:1.1rem;margin:0">✏️ Создать вопрос</h2>
-  </div>
-  <div id="ugc-auth-prompt" class="card" style="display:none;text-align:center;padding:20px">
-    <div style="font-size:2rem;margin-bottom:8px">🔒</div>
-    <p style="color:var(--text-muted);margin-bottom:12px">Для создания вопросов нужен аккаунт</p>
-    <button class="btn btn-primary" onclick="showView('view-auth')">👤 Войти</button>
-  </div>
-  <div id="ugc-create-form" style="display:none">
-    <div class="card">
-      <h3 style="font-size:.95rem;margin-bottom:12px">Новый вопрос</h3>
-      <label class="field-label">Текст вопроса</label>
-      <textarea id="ugc-question-text" class="inp" rows="3" placeholder="Какой элемент имеет атомный номер 79?" style="resize:vertical"></textarea>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px" id="ugc-options-grid">
-        <input class="inp ugc-opt" data-idx="0" placeholder="Вариант A">
-        <input class="inp ugc-opt" data-idx="1" placeholder="Вариант B">
-        <input class="inp ugc-opt" data-idx="2" placeholder="Вариант C">
-        <input class="inp ugc-opt" data-idx="3" placeholder="Вариант D">
-      </div>
-      <label class="field-label mt-12">Правильный ответ</label>
-      <select id="ugc-correct-select" class="inp">
-        <option value="0">A</option><option value="1">B</option>
-        <option value="2">C</option><option value="3">D</option>
-      </select>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">
-        <div>
-          <label class="field-label">Тема</label>
-          <input id="ugc-topic" class="inp" placeholder="история, наука...">
-        </div>
-        <div>
-          <label class="field-label">Сложность (1-5)</label>
-          <input id="ugc-difficulty" class="inp" type="number" min="1" max="5" value="2">
-        </div>
-      </div>
-      <div id="ugc-create-error" class="field-error" style="display:none"></div>
-      <button class="btn btn-primary btn-full mt-12" id="btn-ugc-submit">✅ Отправить на модерацию (+5 💰)</button>
-    </div>
-    <!-- Мои вопросы -->
-    <div class="card" style="margin-top:12px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <h3 style="font-size:.9rem;margin:0">📋 Мои вопросы</h3>
-        <button class="btn btn-sm btn-ghost" id="btn-ugc-load-my">🔄</button>
-      </div>
-      <div id="ugc-my-list"><p class="muted" style="font-size:.82rem">Нажми 🔄 для загрузки</p></div>
-    </div>
-  </div>
-</div>
-
-
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js" defer></script>

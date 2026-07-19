@@ -157,7 +157,16 @@ let profile = JSON.parse(localStorage.getItem("bs_profile") || "null") || {
   name:"", avatar:"🧠", xp:0, games:0, wins:0, totalScore:0, history:[]
 };
 
-/* ═══ Theme init ═══ */\n(function(){\n  if(document.body){\n    document.body.className = localStorage.getItem("bs_theme") || "dark";\n  } else {\n    document.addEventListener("DOMContentLoaded", ()=>{\n      document.body.className = localStorage.getItem("bs_theme") || "dark";\n    });\n  }\n})();
+/* ═══ Theme init ═══ */
+(function(){
+  if(document.body){
+    document.body.className = localStorage.getItem("bs_theme") || "dark";
+  } else {
+    document.addEventListener("DOMContentLoaded", ()=>{
+      document.body.className = localStorage.getItem("bs_theme") || "dark";
+    });
+  }
+})();
 
 /* ════════════ NEURAL NETWORK BACKGROUND ════════════ */
 const NeuralBg = (function(){
@@ -2378,220 +2387,8 @@ function initCampaignUI() {
 
 const ACHIEVEMENTS_CLIENT={
   first_win:"Первая победа", streak5:"В потоке", campaign_world1:"Покоритель мира 1",
-  campaign_boss:"Боссубийца", ugc_creator:"Автор", ugc_10:"Контрибьютор",
-  games10:"Завсегдатай", games50:"Ветеран", perfect_level:"Перфекционист", learn_mode:"Студент"
-};
-
-
-/* ════════════════════════════════════════════════════════
-   LEARN MODE — режим обучения
-   ════════════════════════════════════════════════════════ */
-let _learnQuestions=[], _learnIdx=0, _learnCorrect=0;
-
-function initLearnUI() {
-  // Tab switcher
-  qsa("#view-learn .tab-btn").forEach(btn=>btn.onclick=()=>{
-    qsa("#view-learn .tab-btn").forEach(b=>b.classList.remove("active"));
-    btn.classList.add("active");
-    qsa("#view-learn .tab-panel").forEach(p=>p.style.display="none");
-    const t=btn.dataset.tab;
-    const panel=$(t==="learn-text"?"tab-learn-text":"tab-learn-url");
-    if(panel){panel.style.display="";}
-  });
-  on($("btn-learn-generate"),"click",generateLearnQuiz);
-  on($("btn-learn-next"),    "click",learnNextQ);
-  on($("btn-learn-retry"),   "click",()=>{
-    _learnIdx=0;_learnCorrect=0;
-    $("learn-results-panel").style.display="none";
-    $("learn-game-panel").style.display="";
-    _learnShowQ();
-  });
-}
-
-async function generateLearnQuiz() {
-  const btn=$("btn-learn-generate"); if(!btn) return;
-  const errEl=$("learn-error"); if(errEl)errEl.style.display="none";
-  const isUrl=qsa("#view-learn .tab-btn")[1]?.classList.contains("active");
-  const num=parseInt($("learn-num-q")?.value||"6",10);
-  let body={num_questions:num};
-  if(isUrl){
-    const url=($("learn-url-input")?.value||"").trim();
-    if(!url){toast("⚠️ Введите URL");return;}
-    body.url=url;
-  } else {
-    const text=($("learn-text-input")?.value||"").trim();
-    if(text.length<50){toast("⚠️ Текст слишком короткий");return;}
-    body.content=text;
-  }
-  btn.disabled=true; btn.textContent="⏳ Генерируем...";
-  try{
-    const endpoint=isUrl?"/api/learn/from_url":"/api/learn/from_text";
-    const d=await fetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(r=>r.json());
-    if(!d.questions?.length){
-      if(errEl){errEl.style.display="";errEl.textContent=d.error||"Ошибка генерации";}
-      return;
-    }
-    _learnQuestions=d.questions; _learnIdx=0; _learnCorrect=0;
-    $("learn-input-panel").style.display="none";
-    $("learn-game-panel").style.display="";
-    $("learn-results-panel").style.display="none";
-    if($("learn-q-total"))$("learn-q-total").textContent=d.questions.length;
-    _learnShowQ();
-    toast(`✅ ${d.questions.length} вопросов готово!`);
-  }catch(e){
-    if(errEl){errEl.style.display="";errEl.textContent="Сетевая ошибка";}
-  }finally{
-    btn.disabled=false; btn.textContent="🤖 Сгенерировать";
-  }
-}
-
-function _learnShowQ(){
-  const q=_learnQuestions[_learnIdx]; if(!q) return;
-  if($("learn-q-num"))$("learn-q-num").textContent=_learnIdx+1;
-  if($("learn-correct-cnt"))$("learn-correct-cnt").textContent=_learnCorrect;
-  if($("learn-explanation"))$("learn-explanation").style.display="none";
-  if($("learn-question-text"))$("learn-question-text").textContent=q.question;
-  if($("btn-learn-next"))$("btn-learn-next").style.display="none";
-  const opts=$("learn-options"); if(!opts)return;
-  const LETTERS=["A","B","C","D"];
-  opts.innerHTML=(q.options||[]).map((o,i)=>
-    `<button class="option-btn" data-idx="${i}" onclick="_learnAnswer(${i})">
-      <span class="opt-letter">${LETTERS[i]}</span>${o}
-    </button>`
-  ).join("");
-}
-
-function _learnAnswer(idx){
-  const q=_learnQuestions[_learnIdx]; if(!q) return;
-  const ok=idx===q.correct;
-  if(ok){_learnCorrect++;NeuralBg.pulse("#34d399",0.7);}else NeuralBg.pulse("#f87171",0.5);
-  qsa("#learn-options .option-btn").forEach((btn,i)=>{
-    if(i===q.correct)btn.classList.add("correct");
-    else if(i===idx&&!ok)btn.classList.add("wrong");
-    btn.disabled=true;
-  });
-  const expEl=$("learn-explanation");
-  if(expEl&&q.explanation){expEl.textContent=(ok?"✅ ":"❌ ")+q.explanation;expEl.style.display="";}
-  if($("btn-learn-next"))$("btn-learn-next").style.display="";
-  if(_learnIdx>=_learnQuestions.length-1)
-    if($("btn-learn-next"))$("btn-learn-next").textContent="📊 Результаты";
-}
-
-function learnNextQ(){
-  _learnIdx++;
-  if(_learnIdx>=_learnQuestions.length){
-    _learnShowResults(); return;
-  }
-  _learnShowQ();
-  if($("btn-learn-next"))$("btn-learn-next").textContent="Следующий →";
-}
-
-function _learnShowResults(){
-  $("learn-game-panel").style.display="none";
-  const pct=Math.round(_learnCorrect/_learnQuestions.length*100);
-  const stars=pct>=90?"⭐⭐⭐":pct>=65?"⭐⭐":pct>=40?"⭐":"";
-  $("learn-results-panel").style.display="";
-  $("learn-results-body").innerHTML=`
-    <div style="text-align:center;font-size:1.5rem;margin-bottom:8px">${stars}</div>
-    <div style="text-align:center;font-size:2rem;font-weight:700;color:var(--primary)">${pct}%</div>
-    <div style="text-align:center;color:var(--text-muted);margin-bottom:14px">${_learnCorrect} из ${_learnQuestions.length} верных</div>
-    <div style="height:8px;background:rgba(139,92,246,.15);border-radius:4px;overflow:hidden">
-      <div class="learn-progress-bar" style="width:${pct}%"></div>
-    </div>
-    <p style="font-size:.82rem;color:var(--text-muted);margin-top:10px;text-align:center">
-      ${pct>=80?"🎉 Отличный результат!":pct>=50?"👍 Неплохо, но есть куда расти":"📖 Попробуй ещё раз после повторения материала"}
-    </p>
-  `;
-  if(pct>=80)fireConfetti();
-}
-
-
-/* ════════════════════════════════════════════════════════
-   UGC — пользовательские вопросы
-   ════════════════════════════════════════════════════════ */
-function initUgcUI() {
-  const form=$("ugc-create-form");
-  const prompt=$("ugc-auth-prompt");
-  if(_authUser){if(form)form.style.display="";if(prompt)prompt.style.display="none";}
-  else{if(form)form.style.display="none";if(prompt)prompt.style.display="";}
-
-  on($("btn-ugc-submit"),"click",submitUgcQuestion);
-  on($("btn-ugc-load-my"),"click",loadMyUgcQuestions);
-}
-
-async function submitUgcQuestion(){
-  if(!_authUser){showView("view-auth");return;}
-  const text=($("ugc-question-text")?.value||"").trim();
-  const options=[...(qsa(".ugc-opt")||[])].map(i=>i.value.trim());
-  const correct=parseInt($("ugc-correct-select")?.value||"0",10);
-  const topic=($("ugc-topic")?.value||"").trim();
-  const diff=parseInt($("ugc-difficulty")?.value||"2",10);
-  const errEl=$("ugc-create-error");
-  if(errEl)errEl.style.display="none";
-  const d=await fetch("/api/ugc/create",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({question:text,options,correct,topic,difficulty:diff})
-  }).then(r=>r.json()).catch(()=>({}));
-  if(d.ok){
-    toast(`✅ Вопрос отправлен! +${d.coins_earned||5}💰`);
-    // Сброс формы
-    if($("ugc-question-text"))$("ugc-question-text").value="";
-    qsa(".ugc-opt").forEach(i=>i.value="");
-    // Достижения
-    if(d.new_achievements?.length)
-      d.new_achievements.forEach(id=>toast(`🏅 Достижение: ${ACHIEVEMENTS_CLIENT[id]||id}`,3000));
-    NeuralBg.pulse("#34d399",0.7);
-    loadMyUgcQuestions();
-  } else {
-    if(errEl){errEl.style.display="";errEl.textContent=d.error||"Ошибка";}
-  }
-}
-
-async function loadMyUgcQuestions(){
-  const el=$("ugc-my-list"); if(!el||!_authUser)return;
-  el.innerHTML='<p class="muted" style="font-size:.82rem">Загрузка...</p>';
-  const d=await fetch("/api/ugc/my").then(r=>r.json()).catch(()=>({questions:[]}));
-  const qs=d.questions||[];
-  if(!qs.length){el.innerHTML='<p class="muted" style="font-size:.82rem">Ещё нет вопросов</p>';return;}
-  const STATUS_MAP={pending:"⏳ На модерации",approved:"✅ Одобрен",rejected:"❌ Отклонён"};
-  el.innerHTML=qs.slice(0,20).map(q=>`
-    <div style="padding:8px 0;border-bottom:1px solid rgba(255,255,255,.06)">
-      <div style="font-size:.82rem;font-weight:600">${q.question}</div>
-      <div style="display:flex;gap:8px;margin-top:4px;align-items:center">
-        <span class="ugc-status-badge ${q.status}">${STATUS_MAP[q.status]||q.status}</span>
-        <span style="font-size:.72rem;color:var(--text-muted)">⭐${(q.rating||0).toFixed(1)} · 🎯${q.usage_count||0}×</span>
-        ${q.reject_reason?`<span style="font-size:.72rem;color:var(--red)">${q.reject_reason}</span>`:""}
-      </div>
-    </div>
-  `).join("");
-}
-
-
-/* ════════════════════════════════════════════════════════
-   ADMIN PANEL UPGRADES — UGC модерация
-   ════════════════════════════════════════════════════════ */
-async function loadAdminUgcPending(){
-  const el=$("admin-ugc-list"); if(!el)return;
-  el.innerHTML='<p class="muted" style="font-size:.82rem">Загрузка...</p>';
-  const d=await fetch("/api/admin/ugc_pending").then(r=>r.json()).catch(()=>({questions:[]}));
-  const qs=d.questions||[];
-  if(!qs.length){el.innerHTML='<p class="muted" style="font-size:.82rem">Нет на модерации</p>';return;}
-  el.innerHTML=qs.map(q=>`
-    <div style="padding:10px;background:rgba(139,92,246,.05);border-radius:8px;margin-bottom:8px">
-      <div style="font-size:.83rem;font-weight:600;margin-bottom:4px">${q.question}</div>
-      <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:8px">Автор: ${q.author} · Тема: ${q.topic||"—"}</div>
-      <div style="display:flex;gap:5px">
-        <button class="btn btn-sm btn-secondary" style="color:var(--green)" onclick="ugcModerate(${q.id},true)">✅ Одобрить</button>
-        <button class="btn btn-sm btn-danger" onclick="ugcModerate(${q.id},false)">❌ Отклонить</button>
-      </div>
-    </div>
-  `).join("");
-}
-window.ugcModerate=async(id,approve)=>{
-  const reason=approve?"":prompt("Причина отклонения:")||"Не соответствует правилам";
-  await fetch("/api/admin/ugc_moderate",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({question_id:id,approve,reason})}).then(r=>r.json());
-  toast(approve?"✅ Одобрен":"❌ Отклонён");
-  loadAdminUgcPending();
+  campaign_boss:"Боссубийца",
+  games10:"Завсегдатай", games50:"Ветеран", perfect_level:"Перфекционист"
 };
 
 
@@ -2602,8 +2399,6 @@ window.addEventListener("DOMContentLoaded",()=>{
   // Инициализируем UI всегда, не ждём auth
   initAuthUI();
   initCampaignUI();
-  initLearnUI();
-  initUgcUI();
   
   // Auth проверяем параллельно
   initAuth().then(()=>{
@@ -2618,23 +2413,10 @@ window.addEventListener("DOMContentLoaded",()=>{
   window.showView = (id, ...args)=>{
     origShowView(id, ...args);
     if(id==="view-campaign") loadCampaign();
-    if(id==="view-ugc") {
-      const form=$("ugc-create-form");
-      const prompt=$("ugc-auth-prompt");
-      if(_authUser){if(form)form.style.display="";if(prompt)prompt.style.display="none";}
-      else{if(form)form.style.display="none";if(prompt)prompt.style.display="";}
-    }
-    if(id==="view-learn"){
-      $("learn-input-panel").style.display="";
-      $("learn-game-panel").style.display="none";
-      $("learn-results-panel").style.display="none";
-    }
   };
 });
 
-// Не сбрасываем showView — она уже переопределена выше с загрузкой кампании/UGC
 window.transitionTo = transitionTo;
 window.startCampaignLevel=startCampaignLevel;
 window._campAnswer=_campAnswer;
-window._learnAnswer=_learnAnswer;
 
