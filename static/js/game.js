@@ -102,7 +102,7 @@ function _tryRejoin() {
 }
 
 /* ══ STATE ══ */
-let myScore = 0, isHost = false, isSpectator = false, roomCode = "", isSandbox = false;
+let myScore = 0, isHost = false, isSpectator = false, roomCode = "";
 let currentQ = null, timerInterval = null, timerSec = 30;
 let isTester = false, isAdmin = false;
 let presentationOn = false;   // локальный режим презентации
@@ -459,7 +459,6 @@ function initUI(){
 
   /* Toggles на главном экране */
   makeToggle($("toggle-public"), false, null);
-  makeToggle($("toggle-sandbox"), false, null);
 
   /* Create / Join */
   on($("btn-create"), "click", handleCreate);
@@ -657,7 +656,7 @@ function handleCreate(){
   profile.name=name; saveProfile(); initCheatMenu(name);
   console.log("📡 Emitting create_room...");
   console.log("🔌 Socket connected:", socket && socket.connected);
-  socket.emit("create_room",{player_name:name, is_public:!!$("toggle-public")?.classList.contains("on"), is_sandbox:!!$("toggle-sandbox")?.classList.contains("on")});
+  socket.emit("create_room",{player_name:name, is_public:!!$("toggle-public")?.classList.contains("on")});
   Sounds.create();
 }
 function handleJoin(){
@@ -696,7 +695,6 @@ async function loadPublicRooms(){
 /* ════════════ CHEAT MENU ════════════ */
 function initCheatMenu(_nick){
   const btn=$("snav-cheat"); if(btn) btn.classList.toggle("snav-hidden",!isTester);
-  if($("sandbox-row")) $("sandbox-row").style.display=isTester?"":"none";
   if(!isTester) return;
 
   makeToggle($("cheat-show-answer"), cheatSeeAnswer, v=>{ cheatSeeAnswer=v; localStorage.setItem("c_see",v?"1":"0"); });
@@ -797,7 +795,6 @@ async function activateCheat() {
       isTester = true;
       const btn = $('snav-cheat');
       if (btn) btn.classList.remove('snav-hidden');
-      if ($('sandbox-row')) $('sandbox-row').style.display = '';
       initCheatMenu(profile.name || '');
       toast('🔓 Чит-меню активировано', 3000);
       NeuralBg.pulse('#fbbf24', 1.2);
@@ -848,7 +845,6 @@ async function checkAuthStatus() {
     if (isTester) {
       const btn = $('snav-cheat');
       if (btn) btn.classList.remove('snav-hidden');
-      if ($('sandbox-row')) $('sandbox-row').style.display = '';
     }
   } catch (e) {
     console.warn('Не удалось проверить статус');
@@ -858,7 +854,6 @@ async function checkAuthStatus() {
 async function deactivateCheat(){
   isTester = false;
   const btn=$("snav-cheat"); if(btn) btn.classList.add("snav-hidden");
-  if($("sandbox-row")) $("sandbox-row").style.display="none";
   try{ await fetch("/api/cheat/logout",{method:"POST"}); }catch(_){}
   toast("Чит-меню отключено");
 }
@@ -888,7 +883,6 @@ function initAdminUI(){
           isTester = true;
           const btn = $('snav-cheat');
           if (btn) btn.classList.remove('snav-hidden');
-          if ($('sandbox-row')) $('sandbox-row').style.display = '';
           initCheatMenu(profile.name || '');
           toast("🔓 Чит-меню активировано", 3000);
           NeuralBg.pulse('#fbbf24', 1.2);
@@ -1063,7 +1057,7 @@ async function loadAdminRooms(){
       item.innerHTML=`
         <div style="display:flex;gap:8px;align-items:center;width:100%">
           <span class="public-room-code">${r.code}</span>
-          <span class="public-room-info">${r.mode}·${r.state}${r.is_sandbox?' 🏖':''}${r.is_public?' 🌐':''}</span>
+          <span class="public-room-info">${r.mode}·${r.state}${r.is_public?' 🌐':''}</span>
           <span class="public-room-cnt">👥${r.players}</span>
           ${r.idle_secs>60?`<span style="font-size:.72rem;color:var(--red)">⏳${Math.round(r.idle_secs/60)}м</span>`:''}
         </div>
@@ -1212,7 +1206,7 @@ Object.assign(window,{adminUnban,adminResetUser,adminBanFromList,adminBanRoomPla
 
 /* ════════════ LOBBY HELPERS ════════════ */
 function resetLobbyUI(){
-  roomCode=""; isHost=false; isSpectator=false; isSandbox=false; teamsData={}; draftActive=false; playersData=[];
+  roomCode=""; isHost=false; isSpectator=false; teamsData={}; draftActive=false; playersData=[];
   presentationOn=false; siBoard=null; siBoardMeta=null;
   if($("lobby-code")) $("lobby-code").textContent="------";
   if($("players-list")) $("players-list").innerHTML="";
@@ -1222,7 +1216,6 @@ function resetLobbyUI(){
   if($("btn-start")) $("btn-start").style.display="none";
   if($("btn-leave-lobby")) $("btn-leave-lobby").style.display="none";
   if($("teams-panel")) $("teams-panel").style.display="none";
-  if($("sandbox-badge")) $("sandbox-badge").style.display="none";
   if($("team-board")) $("team-board").style.display="none";
   if($("presentation-overlay")) $("presentation-overlay").style.display="none";
   if($("chat-messages")) $("chat-messages").innerHTML="";
@@ -1728,7 +1721,7 @@ window.submitAnswer=submitAnswer;
 function initSocket(){
 
   socket.on("room_created",data=>{
-    roomCode=data.room_code; isHost=true; isSandbox=!!data.is_sandbox;
+    roomCode=data.room_code; isHost=true;
     _saveSession(roomCode, profile.name);
     if($("lobby-code")) $("lobby-code").textContent=roomCode;
     teamsData={};
@@ -1739,14 +1732,13 @@ function initSocket(){
     if($("btn-leave-lobby")) $("btn-leave-lobby").style.display="";
     if($("mode-desc")) $("mode-desc").textContent=MODE_DESCS["classic"];
     if($("teams-panel")) $("teams-panel").style.display="none";
-    if($("sandbox-badge")) $("sandbox-badge").style.display=isSandbox?"":"none";
     if($("btn-chat-clear")) $("btn-chat-clear").style.display="";  // хост видит кнопку очистки
     _startWaitingTips();
     transitionTo("view-lobby","🏠 Лобби");
   });
 
   socket.on("room_joined",data=>{
-    roomCode=data.room_code; isHost=false; isSpectator=!!data.is_spectator; isSandbox=!!data.is_sandbox;
+    roomCode=data.room_code; isHost=false; isSpectator=!!data.is_spectator;
     _saveSession(roomCode, profile.name);
     if($("lobby-code")) $("lobby-code").textContent=roomCode;
     teamsData={}; if(data.teams) data.teams.forEach(t=>teamsData[t.id]=t);
@@ -1756,7 +1748,6 @@ function initSocket(){
     if($("btn-start")) $("btn-start").style.display="none";
     if($("btn-leave-lobby")) $("btn-leave-lobby").style.display="";
     if(data.settings) applyGuestSettings(data.settings);
-    if($("sandbox-badge")) $("sandbox-badge").style.display=isSandbox?"":"none";
     if($("teams-panel")) $("teams-panel").style.display=data.team_draft_active?"":"none";
     if(data.team_draft_active&&data.teams){renderTeamsDisplay(teamsData,true,data.draft_turn||1);renderDraftPanel(teamsData,data.draft_turn||1);}
     if($("btn-chat-clear")) $("btn-chat-clear").style.display="none";
