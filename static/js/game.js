@@ -102,10 +102,9 @@ function _tryRejoin() {
 }
 
 /* ══ STATE ══ */
-let myScore = 0, isHost = false, isSpectator = false, roomCode = "";
+let myScore = 0, isHost = false, roomCode = "";
 let currentQ = null, timerInterval = null, timerSec = 30;
 let isTester = false, isAdmin = false;
-let presentationOn = false;   // локальный режим презентации
 let rephraseUsed = false;     // использована ли перефразировка на текущем вопросе
 let cheatFreeRephrase = false;
 let animationsOn = localStorage.getItem("bs_anim") !== "off";
@@ -128,7 +127,6 @@ const RT_FACTS = [
   "🃏 Джокер убирает 2 неверных варианта. Стоит 100 очков.",
   "💡 Подсказка от AI стоит 75 очков.",
   "🧠 Адаптивная сложность реагирует на процент верных ответов.",
-  "👻 Невидимые игроки не видны другим — только читеру и хосту.",
   "⭐ Бонус-вопрос даёт двойные очки!",
   "🎯 В «Своей игре» каждая ячейка открывается только один раз.",
 ];
@@ -137,7 +135,6 @@ const RT_FACTS = [
 let cheatSeeAnswer  = localStorage.getItem("c_see")    === "1";
 let cheatEditScores = localStorage.getItem("c_scores")  === "1";
 let cheatInfLives   = false;
-let cheatInvisible  = false;
 
 /* ── Sound prefs ── */
 let soundEnabled   = localStorage.getItem("bs_sound")    !== "off";
@@ -500,11 +497,6 @@ function initUI(){
     toast("✅ Настройки применены");
   });
 
-  /* Режим презентации для хоста */
-  makeToggle($("toggle-presentation-host"), false, v=>{
-    socket.emit("set_presentation_mode", {enabled: v});
-  });
-
   on($("btn-start"),       "click", ()=>socket.emit("start_game",{}));
   on($("btn-leave-lobby"), "click", ()=>{ _clearSession(); socket.emit("leave_room"); transitionTo("view-main","🏠"); resetLobbyUI(); Sounds.leave(); });
   on($("btn-copy"),        "click", ()=>{ navigator.clipboard.writeText(roomCode).then(()=>{ toast("📋 Скопирован"); Sounds.copy(); }); });
@@ -674,9 +666,9 @@ function handleJoin(){
   if(!name||!code){ $("join-error").style.display=""; return; }
   $("join-error").style.display="none";
   profile.name=name; saveProfile(); initCheatMenu(name);
-  joinRoom(code, name, !!$("join-spectator")?.checked);
+  joinRoom(code, name);
 }
-function joinRoom(code, name, spec){ socket.emit("join_room",{room_code:code,player_name:name,spectator:spec}); }
+function joinRoom(code, name){ socket.emit("join_room",{room_code:code,player_name:name}); }
 
 /* ════════════ PUBLIC ROOMS ════════════ */
 async function loadPublicRooms(){
@@ -714,7 +706,6 @@ function initCheatMenu(_nick){
   if($("cheat-score-btns")) $("cheat-score-btns").style.display=cheatEditScores?"":"none";
 
   makeToggle($("cheat-infinite-lives"), false, v=>{ cheatInfLives=v; socket.emit("cheat_set_infinite_lives",{enabled:v}); toast(v?"♾️ Бесконечные жизни вкл":"♾️ выкл"); });
-  makeToggle($("cheat-invisible"),      false, v=>{ cheatInvisible=v; socket.emit("cheat_set_invisible",{enabled:v}); toast(v?"👻 Невидимка вкл":"👻 выкл"); });
   makeToggle($("cheat-free-rephrase"),  false, v=>{ cheatFreeRephrase=v; toast(v?"🔄 Бесплатные перефразировки вкл":"🔄 выкл"); });
 
   makeToggle($("cheat-presentation-global"), false, v=>{
@@ -750,7 +741,7 @@ function initCheatMenu(_nick){
     if(!isTester)return;
     const code=($("cheat-room-code").value||"").trim().toUpperCase();
     if(!code){ toast("⚠️ Введите код"); return; }
-    socket.emit("cheat_teleport",{room_code:code,name:profile.name||"CheatUser",spectator:false});
+    socket.emit("cheat_teleport",{room_code:code,name:profile.name||"CheatUser"});
     closeAllModals();
   });
   on($("cheat-reset-player-btn"),"click",()=>{
@@ -867,6 +858,22 @@ async function deactivateCheat(){
   toast("Чит-меню отключено");
 }
 
+const CHEAT_HELP = {
+  'see-answer': '👁 Видеть правильный ответ\n\nПодсвечивает правильный ответ золотым цветом. Работает только для тебя, другие игроки не видят подсветку. Помогает при тестировании или если застрял на вопросе.',
+  'edit-scores': '💰 Редактор очков (+/−50)\n\nДобавляет кнопки +50 и −50 рядом с твоим счётом. Позволяет быстро изменить очки любого игрока. Используй для балансировки или тестирования.',
+  'infinite-lives': '♾️ Бесконечные жизни\n\nВ режиме "На вылет" ты не теряешь жизни при неправильных ответах. Полезно для тестирования сложных уровней.',
+  'free-rephrase': '🔄 Неограниченные перефразировки\n\nПерефразировка вопроса обычно стоит 50 очков. С этим читом она бесплатная и неограниченная.'
+};
+
+function showCheatHelp(cheatId){
+  const content = CHEAT_HELP[cheatId] || 'Описание недоступно';
+  const el = $('cheat-help-content');
+  if(el) el.innerHTML = content.replace(/\n/g, '<br>');
+  const modal = $('modal-cheat-help');
+  if(modal) modal.style.display = 'flex';
+}
+window.showCheatHelp = showCheatHelp;
+
 /* ════════════ ADMIN UI ════════════ */
 function initAdminUI(){
   on($("btn-admin-activate"),"click",async()=>{
@@ -937,9 +944,6 @@ function initAdminUI(){
     if(!code||!text){toast("⚠️ Код и текст?");return;}
     socket.emit("admin_chat_system",{room_code:code,text}); $("admin-chat-text").value="";
   });
-  on($("admin-pres-on-btn"), "click",()=>{ const c=($("admin-pres-code").value||"").trim().toUpperCase(); if(!c)return; socket.emit("admin_set_presentation",{room_code:c,enabled:true}); });
-  on($("admin-pres-off-btn"),"click",()=>{ const c=($("admin-pres-code").value||"").trim().toUpperCase(); if(!c)return; socket.emit("admin_set_presentation",{room_code:c,enabled:false}); });
-
   // IP-Ban
   on($("admin-ip-ban-btn"),"click",async()=>{
     const ip=($("admin-ip-ban-addr").value||"").trim();
@@ -1145,12 +1149,12 @@ async function adminUnban(nick){ const d=await fetch("/api/admin/unban",{method:
 async function adminResetUser(u){ if(!confirm(`Сбросить ${u}?`))return; const d=await fetch("/api/admin/reset_user",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u})}).then(r=>r.json()); toast(d.ok?"✅ Сброс: "+u:"❌"); loadAdminUsers(); }
 function adminBanFromList(nick){ if($("admin-ban-nick")) $("admin-ban-nick").value=nick; qs("[data-atab='apage-bans']")?.click(); }
 function adminBanRoomPlayerUI(code){ const n=prompt(`Бан игрока из ${code}. Имя:`); if(!n)return; const r=prompt("Причина:")||""; const m=parseInt(prompt("Минут:")||"60"); socket.emit("admin_ban_player",{room_code:code,player_name:n.trim(),reason:r,duration_minutes:m}); }
-function adminJoinRoom(code, asSpectator){
+function adminJoinRoom(code){
   // Сохраняем текущий ник — не меняем
   const name = profile.name || ("Admin_"+Math.floor(Math.random()*900+100));
   closeAllModals();
-  socket.emit("join_room",{room_code:code, player_name:name, spectator:!!asSpectator, as_admin:true});
-  toast(asSpectator ? "👁 Входим зрителем..." : "🔑 Входим игроком...");
+  socket.emit("join_room",{room_code:code, player_name:name, as_admin:true});
+  toast("🔑 Входим игроком...");
 }
 function adminTakeHost(code){ socket.emit("admin_take_host",{room_code:code}); }
 function adminForceEnd(code){ if(!confirm(`Завершить ${code}?`))return; socket.emit("admin_force_end_game",{room_code:code}); }
@@ -1215,8 +1219,8 @@ Object.assign(window,{adminUnban,adminResetUser,adminBanFromList,adminBanRoomPla
 
 /* ════════════ LOBBY HELPERS ════════════ */
 function resetLobbyUI(){
-  roomCode=""; isHost=false; isSpectator=false; teamsData={}; draftActive=false; playersData=[];
-  presentationOn=false; siBoard=null; siBoardMeta=null;
+  roomCode=""; isHost=false; teamsData={}; draftActive=false; playersData=[];
+  siBoard=null; siBoardMeta=null;
   if($("lobby-code")) $("lobby-code").textContent="------";
   if($("players-list")) $("players-list").innerHTML="";
   if($("players-count")) $("players-count").textContent="(0)";
@@ -1226,7 +1230,6 @@ function resetLobbyUI(){
   if($("btn-leave-lobby")) $("btn-leave-lobby").style.display="none";
   if($("teams-panel")) $("teams-panel").style.display="none";
   if($("team-board")) $("team-board").style.display="none";
-  if($("presentation-overlay")) $("presentation-overlay").style.display="none";
   if($("chat-messages")) $("chat-messages").innerHTML="";
   stopCheatStats(); _stopWaitingTips();
 }
@@ -1240,7 +1243,6 @@ const LOBBY_TIPS = [
   "🔄 Перефразировка вопроса поможет, если формулировка непонятна.",
   "🧠 Адаптивная сложность подстраивается под процент верных ответов.",
   "⭐ Бонус-вопросы попадаются случайно — они дают двойные очки!",
-  "👻 В режиме «Невидимка» тебя не видят другие игроки.",
   "🏆 В режиме «Кооп» все получают одинаковые очки за правильный ответ.",
   "❤️ В режиме «На вылет» три ошибки — и ты выбываешь!",
 ];
@@ -1473,7 +1475,7 @@ function renderDraftPanel(teams,draftTurnId){
   if($("draft-turn-label")) $("draft-turn-label").textContent=`👆 Очередь команды "${curTeam.name}" выбирать игрока`;
   const avail=$("draft-available-players"); if(!avail)return; avail.innerHTML="";
   const taken=new Set(Object.values(teams).flatMap(t=>t.members||[]));
-  const available=playersData.filter(p=>!p.is_spectator&&!taken.has(p.sid)&&!Object.values(teams).some(t=>t.leader_sid===p.sid));
+  const available=playersData.filter(p=>!taken.has(p.sid)&&!Object.values(teams).some(t=>t.leader_sid===p.sid));
   if(!available.length){avail.innerHTML='<p class="muted" style="font-size:.82rem">Все распределены</p>';return;}
   for(const p of available){
     const btn=document.createElement("button"); btn.className="draft-player-btn"; btn.textContent=p.name;
@@ -1486,7 +1488,7 @@ function hashCode(s){ let h=0; for(let i=0;i<s.length;i++) h=Math.imul(31,h)+s.c
 function renderPlayersList(players){
   playersData=players;
   const ul=$("players-list"); if(!ul)return; ul.innerHTML="";
-  if($("players-count")) $("players-count").textContent=`(${players.filter(p=>!p.is_spectator).length})`;
+  if($("players-count")) $("players-count").textContent=`(${players.length})`;
   for(const p of players){
     const li=document.createElement("li"); li.className="player-item";
     const avatar=AVATARS[Math.abs(hashCode(p.name))%AVATARS.length];
@@ -1495,7 +1497,7 @@ function renderPlayersList(players){
     const avatarEl=isTester
       ?`<div class="player-avatar cheat-avatar" title="Переименовать" onclick="cheatRenamePlayerUI('${p.sid}','${p.name.replace(/'/g,"\\'")}')"> ${avatar}</div>`
       :`<div class="player-avatar">${avatar}</div>`;
-    li.innerHTML=`${avatarEl}<span class="player-name">${p.name}</span>${p.is_host?'<span class="player-badge host">Хост</span>':""}<span>${p.is_spectator?'<span class="player-badge spectator">Зритель</span>':""}</span>${teamBadge}${p.is_invisible?'<span class="player-badge" style="opacity:.6">👻</span>':""}`;
+    li.innerHTML=`${avatarEl}<span class="player-name">${p.name}</span>${p.is_host?'<span class="player-badge host">Хост</span>':""}${teamBadge}${p.is_invisible?'<span class="player-badge" style="opacity:.6">👻</span>':""}`;
     ul.appendChild(li);
   }
 }
@@ -1556,7 +1558,6 @@ const LOADING_FACTS=[
   "💡 GigaChat от Сбера — один из лучших российских LLM!",
   "🎯 Адаптивная сложность подстраивается под игроков в реальном времени",
   "🔥 Серия правильных ответов даёт стриковый бонус к очкам",
-  "👻 Режим невидимки скрывает тебя от всех, кроме читера",
   "🃏 Джокер убирает два неверных варианта — стоит 100 очков",
   "🧠 Вопросы генерируются нейросетью специально для вашей темы",
   "⚡ FFA-режим: только первый правильный ответ засчитывается!",
@@ -1673,7 +1674,7 @@ function _showQuestion(data,q){
   } else if($("turn-bar"))$("turn-bar").style.display="none";
 
   // Кнопка перефразировки
-  if($("rephrase-bar")) $("rephrase-bar").style.display=isSpectator?"":"";
+  if($("rephrase-bar")) $("rephrase-bar").style.display="";
   if($("rephrase-used")) $("rephrase-used").style.display="none";
   if($("btn-rephrase")) $("btn-rephrase").textContent=`🔄 Перефразировать${cheatFreeRephrase?"":" (−50 очков)"}`;
 
@@ -1695,7 +1696,7 @@ function _showQuestion(data,q){
     }
   });
 
-  if(!isSpectator){startTimer(data.time_limit||30); if($("btn-joker")) $("btn-joker").disabled=false;}
+  startTimer(data.time_limit||30); if($("btn-joker")) $("btn-joker").disabled=false;
 }
 
 function renderTeamBoard(scores,names){
@@ -1714,7 +1715,6 @@ function renderTeamBoard(scores,names){
 
 /* ════════════ SUBMIT ANSWER ════════════ */
 function submitAnswer(idx){
-  if(isSpectator)return;
   socket.emit("submit_answer",{answer_index:idx});
   stopTimer();
   // Нейтрально помечаем выбранный, блокируем остальные — раскрытие будет в question_result
@@ -1747,7 +1747,7 @@ function initSocket(){
   });
 
   socket.on("room_joined",data=>{
-    roomCode=data.room_code; isHost=false; isSpectator=!!data.is_spectator;
+    roomCode=data.room_code; isHost=false;
     _saveSession(roomCode, profile.name);
     if($("lobby-code")) $("lobby-code").textContent=roomCode;
     teamsData={}; if(data.teams) data.teams.forEach(t=>teamsData[t.id]=t);
@@ -1766,7 +1766,7 @@ function initSocket(){
   socket.on("player_joined",data=>{
     if(data.teams) data.teams.forEach(t=>teamsData[t.id]=t);
     renderPlayersList(data.players||[]);
-    toast(`👋 ${data.name} ${data.spectator?"смотрит":"вошёл"}`);
+    toast(`👋 ${data.name} вошёл`);
     Sounds.join();
   });
   socket.on("players_update",data=>{
@@ -1831,7 +1831,7 @@ function initSocket(){
     stopLoadingFacts();
     if(data.mode==="svoyaigra"){
       // Переходим в отдельный view
-      isSpectator=!!data.is_spectator; myScore=0;
+      myScore=0;
       teamsData={}; if(data.teams) data.teams.forEach(t=>teamsData[t.id]=t);
       if(data.presentation) presentationOn=true;
       transitionTo("view-svoyaigra","🎯 Своя игра");
@@ -1839,7 +1839,7 @@ function initSocket(){
       if(meta) renderSiBoard(meta,[],false,data.si_board?.special||{});
       return;
     }
-    isSpectator=!!data.is_spectator; myScore=0;
+    myScore=0;
     if($("g-score")) $("g-score").textContent=0;
     teamsData={}; if(data.teams) data.teams.forEach(t=>teamsData[t.id]=t);
     const mn={classic:"🏆 Классика",ffa:"⚡ FFA",team:"🤝 Команды",lives:"❤️ На вылет",coop:"🌟 Кооп"};
@@ -1850,8 +1850,6 @@ function initSocket(){
       if($("team-board")) $("team-board").style.display="";
     } else { if($("g-team")) $("g-team").style.display="none"; if($("team-board")) $("team-board").style.display="none"; }
     if($("g-lives")) $("g-lives").style.display=data.mode==="lives"?"":"none";
-    if($("spectator-banner")) $("spectator-banner").style.display=isSpectator?"":"none";
-    if($("player-tools")) $("player-tools").style.display=isSpectator?"none":"";
     if($("btn-pres-toggle")) $("btn-pres-toggle").style.display=""; // все могут переключать презентацию (локально или глобально)
     if(data.presentation){presentationOn=true;if($("presentation-overlay"))$("presentation-overlay").style.display="flex";}
     if(isTester) startCheatStats();
@@ -2411,6 +2409,15 @@ window.addEventListener("DOMContentLoaded",()=>{
   const origShowView = window.showView;
   window.showViewOrig = origShowView;
   window.showView = (id, ...args)=>{
+    origShowView(id, ...args);
+    if(id==="view-campaign") loadCampaign();
+  };
+});
+
+window.transitionTo = transitionTo;
+window.startCampaignLevel=startCampaignLevel;
+window._campAnswer=_campAnswer;
+
     origShowView(id, ...args);
     if(id==="view-campaign") loadCampaign();
   };
