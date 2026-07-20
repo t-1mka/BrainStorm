@@ -65,14 +65,15 @@ def _call_gigachat(user_prompt: str, system: str = SYSTEM_PROMPT) -> str:
     if not creds:
         raise RuntimeError("GIGACHAT_CREDENTIALS не задан")
     from gigachat import GigaChat
+    from gigachat.models import Chat
     with GigaChat(credentials=creds, verify_ssl_certs=False) as gc:
-        response = gc.chat(
-            [
+        chat = Chat(
+            messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user_prompt}
-            ],
-            functions=[]
+            ]
         )
+        response = gc.chat(chat)
         content = response.choices[0].message.content
     return content.strip()
 
