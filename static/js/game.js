@@ -2418,12 +2418,3 @@ window.transitionTo = transitionTo;
 window.startCampaignLevel=startCampaignLevel;
 window._campAnswer=_campAnswer;
 
-    origShowView(id, ...args);
-    if(id==="view-campaign") loadCampaign();
-  };
-});
-
-window.transitionTo = transitionTo;
-window.startCampaignLevel=startCampaignLevel;
-window._campAnswer=_campAnswer;
-
