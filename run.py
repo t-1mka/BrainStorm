@@ -1,100 +1,94 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+"""Local development entry point.
+
+Usage::
+
+    python run.py
+
+Loads ``.env`` (creating it from ``.env.example`` when absent), then starts the
+development server.  For production use gunicorn via ``wsgi.py``.
 """
-BrainStorm — точка запуска для локальной разработки.
-Запуск: python run.py
-"""
 
-import os, sys, logging
+from __future__ import annotations
 
-# ── Кодировка ─────────────────────────────────────────────
-os.environ["PYTHONUTF8"] = "1"
-os.environ["PYTHONIOENCODING"] = "utf-8"
-for s in (sys.stdout, sys.stderr):
-    if hasattr(s, "reconfigure"):
-        try: s.reconfigure(encoding="utf-8", errors="replace")
-        except: pass
+import contextlib
+import os
+import socket
+import sys
+from pathlib import Path
 
-if sys.version_info < (3, 10):
-    print("Нужен Python 3.10+"); sys.exit(1)
+BASE_DIR = Path(__file__).resolve().parent
+BANNER_WIDTH = 52
 
-# ── Загружаем .env ─────────────────────────────────────────
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-env_path = os.path.join(BASE_DIR, ".env")
-example  = os.path.join(BASE_DIR, ".env.example")
 
-if not os.path.exists(env_path):
-    if os.path.exists(example):
-        import shutil; shutil.copy(example, env_path)
-        print("Создан .env из шаблона.")
+def _configure_encoding() -> None:
+    """Force UTF-8 so Cyrillic output is not mangled on Windows consoles."""
+    os.environ.setdefault("PYTHONUTF8", "1")
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            with contextlib.suppress(Exception):
+                stream.reconfigure(encoding="utf-8", errors="replace")
 
-try:
+
+def _load_env() -> None:
+    """Load ``.env``, seeding it from the example on first run."""
     from dotenv import load_dotenv
-    load_dotenv(env_path, override=False)
-except ImportError:
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "python-dotenv", "-q"])
-    from dotenv import load_dotenv
+
+    env_path = BASE_DIR / ".env"
+    example_path = BASE_DIR / ".env.example"
+    if not env_path.exists() and example_path.exists():
+        env_path.write_text(example_path.read_text(encoding="utf-8"), encoding="utf-8")
+        print("Created .env from .env.example — review it before deploying.")
     load_dotenv(env_path, override=False)
 
-# ── Устанавливаем зависимости ──────────────────────────────
-req_file = os.path.join(BASE_DIR, "requirements.txt")
-if os.path.exists(req_file):
-    import subprocess
-    print("Проверяю зависимости...")
-    r = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-r", req_file, "-q", "--disable-pip-version-check"],
-        capture_output=True, text=True
-    )
-    if r.returncode != 0:
-        print("Ошибка:", r.stderr[:300]); sys.exit(1)
-    print("Зависимости OK")
 
-# ── Логирование ────────────────────────────────────────────
-log_level = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
-logging.basicConfig(
-    level=log_level,
-    format="%(asctime)s [%(levelname)-5s] %(name)s: %(message)s",
-    datefmt="%H:%M:%S",
-    handlers=[logging.StreamHandler(sys.stdout)],
-)
-for q in ("engineio", "socketio", "urllib3", "werkzeug"):
-    logging.getLogger(q).setLevel(logging.WARNING)
-
-# ── Запуск ─────────────────────────────────────────────────
-import socket as _socket
-
-def get_local_ip():
+def _local_ip() -> str:
+    """Best-effort detection of the LAN IP for the startup banner."""
     try:
-        s = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80)); ip = s.getsockname()[0]; s.close(); return ip
-    except: return "127.0.0.1"
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            return sock.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
 
-from app import create_app, socketio
-from app.ai_client import active_backend
 
-app     = create_app()
-host    = os.getenv("HOST", "0.0.0.0")
-port    = int(os.getenv("PORT", 5000))
-debug   = os.getenv("DEBUG", "false").lower() == "true"
-ip      = get_local_ip()
-ai_info = active_backend()
-creds   = os.getenv("GIGACHAT_CREDENTIALS", "")
+def _print_banner(port: int, ip: str, backend: str) -> None:
+    """Print a boxed startup summary."""
+    def row(text: str) -> str:
+        """Pad ``text`` to a fixed-width banner row."""
+        return f"|  {text.ljust(BANNER_WIDTH)}|"
 
-print()
-print("+--------------------------------------------------+")
-print("|  MOZGOVOY SHTURM  -  server started!            |")
-print("+--------------------------------------------------+")
-print("|  Local:   http://localhost:" + str(port) + "                  |")
-print("|  Network: http://" + ip + ":" + str(port) + "              |")
-print("+--------------------------------------------------+")
-print("|  AI: " + ai_info[:44] + (" " * max(0, 44 - len(ai_info))) + "  |")
-if not creds:
-    print("|  WARNING: GIGACHAT_CREDENTIALS not set!          |")
-    print("|  Using fallback question bank                    |")
-print("+--------------------------------------------------+")
-print("|  Ctrl+C to stop                                  |")
-print("+--------------------------------------------------+")
-print()
+    line = "+" + "-" * BANNER_WIDTH + "+"
+    print()
+    print(line)
+    print(row("🧠  BRAINSTORM — server started"))
+    print(line)
+    print(row(f"Local:   http://localhost:{port}"))
+    print(row(f"Network: http://{ip}:{port}"))
+    print(row(f"AI:      {backend}"))
+    print(line)
+    print(row("Press Ctrl+C to stop"))
+    print(line)
+    print()
 
-socketio.run(app, host=host, port=port, debug=debug, allow_unsafe_werkzeug=True)
+
+def main() -> int:
+    """Entry point: load env, print the banner and serve."""
+    _configure_encoding()
+    _load_env()
+
+    from app import run_dev_server
+    from app.config import settings
+    from app.services.ai_client import active_backend
+
+    backend = active_backend()
+    if not settings.ai_enabled:
+        print("WARNING: GIGACHAT_CREDENTIALS is not set — the fallback question bank will be used.")
+    _print_banner(settings.port, _local_ip(), backend)
+    run_dev_server()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

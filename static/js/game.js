@@ -155,14 +155,34 @@ let profile = JSON.parse(localStorage.getItem("bs_profile") || "null") || {
 };
 
 /* ═══ Theme init ═══ */
-(function(){
-  if(document.body){
-    document.body.className = localStorage.getItem("bs_theme") || "dark";
-  } else {
-    document.addEventListener("DOMContentLoaded", ()=>{
-      document.body.className = localStorage.getItem("bs_theme") || "dark";
-    });
+const Theme = (function(){
+  const KEY = "bs_theme";
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+
+  function _resolve(mode){
+    return mode === "dark" || (mode === "auto" && media.matches);
   }
+
+  function apply(mode){
+    const m = (mode === "light" || mode === "dark") ? mode : "auto";
+    const isDark = _resolve(m);
+    document.documentElement.dataset.theme = m;
+    document.documentElement.classList.toggle("dark", isDark);
+    document.documentElement.classList.toggle("light", !isDark);
+    const meta = document.querySelector('meta[name="theme-color"]:not([media])');
+    if(meta) meta.setAttribute("content", isDark ? "#0f0b1e" : "#f4f1ff");
+    localStorage.setItem(KEY, m);
+    return m;
+  }
+
+  function current(){ return localStorage.getItem(KEY) || "auto"; }
+
+  // Re-apply automatically when the OS scheme changes while in "auto" mode.
+  media.addEventListener("change", () => { if(current() === "auto") apply("auto"); });
+
+  apply(current());
+
+  return { apply, current, isDark: () => _resolve(current()) };
 })();
 
 /* ════════════ NEURAL NETWORK BACKGROUND ════════════ */
@@ -330,7 +350,7 @@ function showView(id){
 function transitionTo(id, label="") {
   if(!animationsOn){ showView(id); return; }
   const ov = $("transition-overlay");
-  ov.innerHTML = `<div class="tov-content"><div style="font-size:1.5rem;font-family:var(--font-head);color:var(--accent)">${label}</div></div>`;
+  ov.innerHTML = `<div class="tov-content"><div style="font-size:1.5rem;font-family:var(--font-head);color:var(--accent)">${escHtml(label)}</div></div>`;
   ov.style.display = "flex"; ov.classList.add("active");
   setTimeout(()=>{ showView(id); ov.classList.remove("active"); setTimeout(()=>ov.style.display="none",350); }, 350);
 }
@@ -384,7 +404,7 @@ function renderProfileModal(){
   const hist=$("history-list"); hist.innerHTML="";
   const entries=[...(profile.history||[])].reverse().slice(0,10);
   if(!entries.length) hist.innerHTML='<p class="muted" style="font-size:.85rem">Нет игр</p>';
-  else entries.forEach(h=>{ const d=document.createElement("div");d.className="history-item";d.innerHTML=`<span class="history-date">${h.date||"—"}</span><span class="history-topic">${h.topic||"Игра"}</span><span class="history-score">+${h.score}</span>`;hist.appendChild(d); });
+  else entries.forEach(h=>{ const d=document.createElement("div");d.className="history-item";d.innerHTML=`<span class="history-date">${escHtml(h.date||"—")}</span><span class="history-topic">${escHtml(h.topic||"Игра")}</span><span class="history-score">+${escHtml(h.score)}</span>`;hist.appendChild(d); });
 }
 
 /* ════════════ MODALS ════════════ */
@@ -399,7 +419,7 @@ async function loadLeaderboard(){
     const data = await fetch("/api/leaderboard?n=20").then(r=>r.json());
     if(!data.length){ $("lb-content").innerHTML='<p class="muted center" style="padding:20px 0">Пока нет игроков</p>'; return; }
     const medals=["🥇","🥈","🥉"];
-    $("lb-content").innerHTML=data.map((p,i)=>`<div class="lb-global-item"><span style="font-size:${i<3?'1.4':'1'}rem;min-width:32px;text-align:center">${medals[i]||(i+1)}</span><span style="flex:1;font-weight:700">${p.username}</span><span style="color:var(--text-muted);font-size:.8rem">${p.games_played} игр</span><span style="font-family:var(--font-mono);font-weight:700;color:var(--accent)">${p.total_score}</span></div>`).join("");
+    $("lb-content").innerHTML=data.map((p,i)=>`<div class="lb-global-item"><span style="font-size:${i<3?'1.4':'1'}rem;min-width:32px;text-align:center">${medals[i]||(i+1)}</span><span style="flex:1;font-weight:700">${escHtml(p.username)}</span><span style="color:var(--text-muted);font-size:.8rem">${p.games_played} игр</span><span style="font-family:var(--font-mono);font-weight:700;color:var(--accent)">${p.total_score}</span></div>`).join("");
     if(profile.name) try{
       const r=await fetch(`/api/rank/${encodeURIComponent(profile.name)}`).then(r=>r.json());
       if(r&&r.rank){const el=$("lb-my-rank");el.style.display="";el.textContent=`📍 Ваше место: #${r.rank} · ${r.total_score||0} очков`;}
@@ -409,13 +429,25 @@ async function loadLeaderboard(){
 
 /* ════════════ SETTINGS SYNC ════════════ */
 function syncSettingsUI(){
-  makeToggle($("toggle-theme"), document.body.classList.contains("dark"), v=>{ document.body.className=v?"dark":"light"; localStorage.setItem("bs_theme",v?"dark":"light"); });
+  _syncThemeSegmented();
   makeToggle($("toggle-sound"), soundEnabled, v=>{ soundEnabled=v; localStorage.setItem("bs_sound",v?"on":"off"); });
   makeToggle($("toggle-tick"), tickEnabled, v=>{ tickEnabled=v; localStorage.setItem("bs_tick",v?"on":"off"); });
   makeToggle($("toggle-confetti"), confettiEnabled, v=>{ confettiEnabled=v; localStorage.setItem("bs_confetti",v?"on":"off"); });
   makeToggle($("toggle-particles"), particlesOn, v=>{ particlesOn=v; localStorage.setItem("bs_particles",v?"on":"off"); });
   makeToggle($("toggle-event-sound"), eventSoundOn, v=>{ eventSoundOn=v; localStorage.setItem("bs_evtsound",v?"on":"off"); });
   makeToggle($("toggle-animations"), animationsOn, v=>{ animationsOn=v; localStorage.setItem("bs_anim",v?"on":"off"); });
+}
+
+/* Wire the light/auto/dark segmented control to the Theme manager. */
+function _syncThemeSegmented(){
+  const seg = $("theme-segmented"); if(!seg) return;
+  const mode = Theme.current();
+  seg.querySelectorAll(".seg-btn").forEach(btn=>{
+    const active = btn.dataset.themeMode === mode;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-selected", active ? "true" : "false");
+    btn.onclick = () => { Theme.apply(btn.dataset.themeMode); _syncThemeSegmented(); };
+  });
 }
 
 /* ════════════ INIT UI ════════════ */
@@ -680,7 +712,7 @@ async function loadPublicRooms(){
     list.innerHTML="";
     for(const room of rooms){
       const item=document.createElement("div"); item.className="public-room-item";
-      item.innerHTML=`<span class="public-room-code">${room.code}</span><span class="public-room-info">${room.topic||"Общие знания"} · ${room.mode}</span><span class="public-room-cnt">👥 ${room.players} · ${room.state==="playing"?"Идёт игра":"Ожидание"}</span>`;
+      item.innerHTML=`<span class="public-room-code">${room.code}</span><span class="public-room-info">${escHtml(room.topic||"Общие знания")} · ${escHtml(room.mode)}</span><span class="public-room-cnt">👥 ${room.players} · ${room.state==="playing"?"Идёт игра":"Ожидание"}</span>`;
       item.onclick=()=>{
         const name=($("public-name").value||"").trim();
         if(!name){ toast("⚠️ Введите имя"); $("public-name").focus(); return; }
@@ -707,6 +739,8 @@ function initCheatMenu(_nick){
 
   makeToggle($("cheat-infinite-lives"), false, v=>{ cheatInfLives=v; socket.emit("cheat_set_infinite_lives",{enabled:v}); toast(v?"♾️ Бесконечные жизни вкл":"♾️ выкл"); });
   makeToggle($("cheat-free-rephrase"),  false, v=>{ cheatFreeRephrase=v; toast(v?"🔄 Бесплатные перефразировки вкл":"🔄 выкл"); });
+  makeToggle($("cheat-invisibility"),   false, v=>{ socket.emit("cheat_toggle_invisibility",{enabled:v}); toast(v?"👻 Невидимость вкл":"👻 выкл"); });
+  makeToggle($("cheat-godmode"),        false, v=>{ socket.emit("cheat_grant_power",{enabled:v}); toast(v?"🛡️ Режим бога вкл":"🛡️ выкл"); });
 
   makeToggle($("cheat-presentation-global"), false, v=>{
     socket.emit("set_presentation_mode",{enabled:v});
@@ -720,6 +754,12 @@ function initCheatMenu(_nick){
     toast("⏭️ Вопрос пропущен");
     NeuralBg.pulse("#fbbf24",0.9);
   });
+  on($("cheat-reveal-btn"),"click",()=>{ if(!isTester)return; socket.emit("cheat_reveal_answer",{}); toast("👁️ Ответ показан"); });
+  on($("cheat-fill-btn"),"click",()=>{ if(!isTester)return; socket.emit("cheat_fill_answer",{}); toast("✅ Ответили за всех"); });
+  on($("cheat-reset-answers-btn"),"click",()=>{ if(!isTester)return; socket.emit("cheat_reset_answers",{}); toast("🔁 Вопрос переоткрыт"); });
+  on($("cheat-clear-chat-btn"),"click",()=>{ if(!isTester)return; socket.emit("cheat_clear_chat",{}); toast("🧹 Чат очищен"); });
+  const diffSel = $("cheat-difficulty");
+  if(diffSel){ diffSel.value = "medium"; diffSel.onchange = () => { if(!isTester)return; socket.emit("cheat_set_difficulty",{difficulty:diffSel.value}); toast("🎚️ Сложность: "+diffSel.value); }; }
   on($("cheat-set-lives-btn"),"click",()=>{
     if(!isTester)return;
     const name=($("cheat-lives-player").value||"").trim();
@@ -763,14 +803,18 @@ function startCheatStats(){ if(!isTester||!roomCode)return; stopCheatStats(); _c
 function stopCheatStats(){ if(_cheatStatsTimer){clearInterval(_cheatStatsTimer);_cheatStatsTimer=null;} }
 function renderCheatStats(d){
   const el=$("cheat-answer-stats"); if(!el||!isTester)return;
-  if(!d||!Object.keys(d.answer_counts||{}).length){el.textContent="Нет ответов пока";return;}
+  if(!d||d.ok===false){ el.textContent="Нет данных"; return; }
+  if(!Object.keys(d.answer_counts||{}).length){
+    el.textContent = d.total_active ? `Ждём ответы: 0/${d.total_active}` : "Нет активных игроков";
+    return;
+  }
   const L=["A","B","C","D","E","F"];
   let html='<div style="display:flex;flex-direction:column;gap:4px">';
   for(const[idx,cnt] of Object.entries(d.answer_counts)){
     const names=(d.answer_players||{})[idx]||[];
-    html+=`<div style="font-size:.78rem"><b>${L[idx]||idx}:</b> ${cnt}× — ${names.join(", ")}</div>`;
+    html+=`<div style="font-size:.78rem"><b>${escHtml(L[idx]||String(idx))}:</b> ${cnt}× — ${names.map(escHtml).join(", ")}</div>`;
   }
-  html+=`<div style="font-size:.75rem;color:var(--text-muted);margin-top:3px">Ответили: ${d.total_answered}/${d.total_active}</div></div>`;
+  html+=`<div style="font-size:.75rem;color:var(--text-muted);margin-top:3px">Ответили: ${d.total_answered}/${d.total_active}${d.question_number?` · Вопрос ${d.question_number}/${d.total_questions}`:""}</div></div>`;
   el.innerHTML=html;
 }
 
@@ -862,13 +906,15 @@ const CHEAT_HELP = {
   'see-answer': '👁 Видеть правильный ответ\n\nПодсвечивает правильный ответ золотым цветом. Работает только для тебя, другие игроки не видят подсветку. Помогает при тестировании или если застрял на вопросе.',
   'edit-scores': '💰 Редактор очков (+/−50)\n\nДобавляет кнопки +50 и −50 рядом с твоим счётом. Позволяет быстро изменить очки любого игрока. Используй для балансировки или тестирования.',
   'infinite-lives': '♾️ Бесконечные жизни\n\nВ режиме "На вылет" ты не теряешь жизни при неправильных ответах. Полезно для тестирования сложных уровней.',
-  'free-rephrase': '🔄 Неограниченные перефразировки\n\nПерефразировка вопроса обычно стоит 50 очков. С этим читом она бесплатная и неограниченная.'
+  'free-rephrase': '🔄 Неограниченные перефразировки\n\nПерефразировка вопроса обычно стоит 50 очков. С этим читом она бесплатная и неограниченная.',
+  'invisibility': '👻 Невидимость\n\nТы исчезаешь из списка игроков, но продолжаешь видеть вопросы и результаты. Удобно, чтобы тихо наблюдать за игрой, не мешая участникам.',
+  'godmode': '🛡️ Режим бога\n\nТы исключён из таймера вопроса (тебя не наказывают за просроченный ответ) и получаешь бесконечные жизни. Идеально для отладки без спешки.'
 };
 
 function showCheatHelp(cheatId){
   const content = CHEAT_HELP[cheatId] || 'Описание недоступно';
   const el = $('cheat-help-content');
-  if(el) el.innerHTML = content.replace(/\n/g, '<br>');
+  if(el) el.innerHTML = escHtml(content).replace(/\n/g, '<br>');
   const modal = $('modal-cheat-help');
   if(modal) modal.style.display = 'flex';
 }
@@ -1074,7 +1120,7 @@ async function loadAdminRooms(){
           <span class="public-room-cnt">👥${r.players}</span>
           ${r.idle_secs>60?`<span style="font-size:.72rem;color:var(--red)">⏳${Math.round(r.idle_secs/60)}м</span>`:''}
         </div>
-        <div style="font-size:.78rem;color:var(--text-muted)">Хост: ${r.host||"—"} · ${r.topic||"—"}</div>
+        <div style="font-size:.78rem;color:var(--text-muted)">Хост: ${escHtml(r.host||"—")} · ${escHtml(r.topic||"—")}</div>
         <div style="display:flex;gap:5px;flex-wrap:wrap">
           <button class="btn btn-sm btn-secondary" onclick="adminJoinRoom('${r.code}',true)">👁 Зритель</button>
           <button class="btn btn-sm btn-secondary" onclick="adminJoinRoom('${r.code}',false)">🎮 Войти</button>
@@ -1103,7 +1149,7 @@ async function loadAdminUsers(){
       item.style.cssText="flex-direction:column;align-items:flex-start;gap:4px;cursor:default";
       const ls=u.last_seen?new Date(u.last_seen*1000).toLocaleDateString("ru-RU"):"—";
       const tt=u.total_time?Math.round(u.total_time/60)+"мин":"—";
-      item.innerHTML=`<div style="display:flex;gap:8px;align-items:center;width:100%"><span style="flex:1;font-weight:700">${u.username}</span><span style="font-size:.75rem;color:var(--text-muted)">${u.wins}🏆 ${u.games_played}🎮</span><span style="font-family:var(--font-mono);color:var(--accent)">${u.total_score}</span></div><div style="font-size:.74rem;color:var(--text-muted)">Вход: ${ls} · Время: ${tt}</div><div style="display:flex;gap:5px"><button class="btn btn-sm btn-secondary" onclick="adminResetUser('${u.username}')">🗑 Сброс</button><button class="btn btn-sm btn-danger" onclick="adminBanFromList('${u.username}')">🚫 Бан</button></div>`;
+      item.innerHTML=`<div style="display:flex;gap:8px;align-items:center;width:100%"><span style="flex:1;font-weight:700">${escHtml(u.username)}</span><span style="font-size:.75rem;color:var(--text-muted)">${u.wins}🏆 ${u.games_played}🎮</span><span style="font-family:var(--font-mono);color:var(--accent)">${u.total_score}</span></div><div style="font-size:.74rem;color:var(--text-muted)">Вход: ${ls} · Время: ${tt}</div><div style="display:flex;gap:5px"><button class="btn btn-sm btn-secondary" onclick="adminResetUser('${escJs(u.username)}')">🗑 Сброс</button><button class="btn btn-sm btn-danger" onclick="adminBanFromList('${escJs(u.username)}')">🚫 Бан</button></div>`;
       list.appendChild(item);
     }
   }catch(e){list.innerHTML='<p style="color:var(--red);font-size:.85rem">Ошибка</p>';}
@@ -1120,7 +1166,7 @@ async function loadAdminBans(){
       const exp=new Date(b.expires_at*1000).toLocaleString("ru-RU");
       const item=document.createElement("div"); item.className="public-room-item";
       item.style.cssText="flex-direction:column;align-items:flex-start;gap:4px;cursor:default";
-      item.innerHTML=`<div style="font-weight:700;color:var(--red)">${b.identifier}</div><div style="font-size:.75rem;color:var(--text-muted)">${b.reason||"—"} · до ${exp}</div><button class="btn btn-sm btn-secondary" onclick="adminUnban('${b.identifier}')">✅ Разбан</button>`;
+      item.innerHTML=`<div style="font-weight:700;color:var(--red)">${escHtml(b.identifier)}</div><div style="font-size:.75rem;color:var(--text-muted)">${escHtml(b.reason||"—")} · до ${exp}</div><button class="btn btn-sm btn-secondary" onclick="adminUnban('${escJs(b.identifier)}')">✅ Разбан</button>`;
       list.appendChild(item);
     }
   }catch(e){list.innerHTML='<p style="color:var(--red);font-size:.85rem">Ошибка</p>';}
@@ -1139,7 +1185,7 @@ async function loadAdminHistory(code){
       const ps=(h.players||[]).map(p=>`${p.name}:${p.score}`).join(", ");
       const item=document.createElement("div"); item.className="public-room-item";
       item.style.cssText="flex-direction:column;align-items:flex-start;gap:4px;cursor:default";
-      item.innerHTML=`<div style="font-size:.78rem;color:var(--text-muted)">${date} · ${dur} · ${h.mode}</div><div style="font-size:.82rem"><b>Тема:</b> ${h.topic||"—"}</div><div style="font-size:.75rem;color:var(--text-muted)">${ps}</div><details style="width:100%"><summary style="cursor:pointer;font-size:.75rem;color:var(--accent)">Вопросы (${(h.questions||[]).length})</summary><div style="max-height:130px;overflow-y:auto;font-size:.73rem;color:var(--text-muted);margin-top:5px">${(h.questions||[]).map((q,i)=>`<div><b>${i+1}.</b> ${q.question||""}</div>`).join("")}</div></details>`;
+      item.innerHTML=`<div style="font-size:.78rem;color:var(--text-muted)">${date} · ${dur} · ${h.mode}</div><div style="font-size:.82rem"><b>Тема:</b> ${escHtml(h.topic||"—")}</div><div style="font-size:.75rem;color:var(--text-muted)">${ps}</div><details style="width:100%"><summary style="cursor:pointer;font-size:.75rem;color:var(--accent)">Вопросы (${(h.questions||[]).length})</summary><div style="max-height:130px;overflow-y:auto;font-size:.73rem;color:var(--text-muted);margin-top:5px">${(h.questions||[]).map((q,i)=>`<div><b>${i+1}.</b> ${escHtml(q.question||"")}</div>`).join("")}</div></details>`;
       list.appendChild(item);
     }
   }catch(e){list.innerHTML='<p style="color:var(--red);font-size:.85rem">Ошибка</p>';}
@@ -1173,7 +1219,7 @@ async function loadAdminIpBans(){
       const exp=b.expires_at?new Date(b.expires_at*1000).toLocaleString("ru-RU"):"Постоянно";
       const item=document.createElement("div"); item.className="public-room-item";
       item.style.cssText="flex-direction:column;align-items:flex-start;gap:4px;cursor:default";
-      item.innerHTML=`<div style="font-weight:700;color:var(--red);font-family:var(--font-mono)">${b.ip||b.identifier}</div><div style="font-size:.75rem;color:var(--text-muted)">${b.reason||"—"} · до ${exp}</div><button class="btn btn-sm btn-secondary" onclick="adminIpUnbanDirect('${b.ip||b.identifier}')">✅ Разбан</button>`;
+      item.innerHTML=`<div style="font-weight:700;color:var(--red);font-family:var(--font-mono)">${escHtml(b.ip||b.identifier)}</div><div style="font-size:.75rem;color:var(--text-muted)">${escHtml(b.reason||"—")} · до ${exp}</div><button class="btn btn-sm btn-secondary" onclick="adminIpUnbanDirect('${escJs(b.ip||b.identifier)}')">✅ Разбан</button>`;
       list.appendChild(item);
     }
   }catch(e){list.innerHTML='<p style="color:var(--red);font-size:.85rem">Нет API или ошибка</p>';}
@@ -1207,7 +1253,7 @@ async function loadAdminStats(){
       <hr style="border-color:rgba(255,255,255,0.07);margin:10px 0">
       <p style="font-size:.82rem;font-weight:700;margin-bottom:6px">Топ комнаты по игрокам:</p>
       ${rooms.slice().sort((a,b)=>(b.players||0)-(a.players||0)).slice(0,5).map(r=>
-        `<div style="display:flex;gap:8px;font-size:.8rem;padding:4px 0"><span style="font-family:var(--font-mono);color:var(--accent)">${r.code}</span><span style="flex:1;color:var(--text-muted)">${r.topic||"—"}</span><span style="color:var(--green)">👥${r.players}</span></div>`
+        `<div style="display:flex;gap:8px;font-size:.8rem;padding:4px 0"><span style="font-family:var(--font-mono);color:var(--accent)">${escHtml(r.code)}</span><span style="flex:1;color:var(--text-muted)">${escHtml(r.topic||"—")}</span><span style="color:var(--green)">👥${r.players}</span></div>`
       ).join("")}
     `;
   }catch(e){el.innerHTML='<p style="color:var(--red);font-size:.85rem">Ошибка загрузки</p>';}
@@ -1455,7 +1501,7 @@ function renderTeamsDisplay(teams,draft=false,draftTurnId=1){
   for(const t of Object.values(teams)){
     const card=document.createElement("div"); card.className="team-card";
     const color=TEAM_COLORS[t.id]||"#888";
-    card.innerHTML=`<div class="team-card-header"><div class="team-color-dot" style="background:${color}"></div><div class="team-card-name">${t.name}</div>${draft&&t.id===draftTurnId?'<span style="font-size:.72rem;background:rgba(251,191,36,0.2);color:var(--gold);padding:2px 8px;border-radius:20px;margin-left:auto">Выбирает 👆</span>':''}</div><div class="team-card-members" id="team-members-${t.id}"></div>`;
+    card.innerHTML=`<div class="team-card-header"><div class="team-color-dot" style="background:${color}"></div><div class="team-card-name">${escHtml(t.name)}</div>${draft&&t.id===draftTurnId?'<span style="font-size:.72rem;background:rgba(251,191,36,0.2);color:var(--gold);padding:2px 8px;border-radius:20px;margin-left:auto">Выбирает 👆</span>':''}</div><div class="team-card-members" id="team-members-${t.id}"></div>`;
     grid.appendChild(card);
   }
   div.appendChild(grid);
@@ -1495,9 +1541,9 @@ function renderPlayersList(players){
     const color=p.team?TEAM_COLORS[p.team]||"#888":"";
     const teamBadge=p.team&&teamsData[p.team]?`<span class="player-badge" style="background:rgba(0,0,0,0.2);border:1px solid ${color};color:${color}">${teamsData[p.team]?.name||'Команда '+p.team}</span>`:"";
     const avatarEl=isTester
-      ?`<div class="player-avatar cheat-avatar" title="Переименовать" onclick="cheatRenamePlayerUI('${p.sid}','${p.name.replace(/'/g,"\\'")}')"> ${avatar}</div>`
+      ?`<div class="player-avatar cheat-avatar" title="Переименовать" onclick="cheatRenamePlayerUI('${escJs(p.sid)}','${escJs(p.name)}')"> ${avatar}</div>`
       :`<div class="player-avatar">${avatar}</div>`;
-    li.innerHTML=`${avatarEl}<span class="player-name">${p.name}</span>${p.is_host?'<span class="player-badge host">Хост</span>':""}${teamBadge}${p.is_invisible?'<span class="player-badge" style="opacity:.6">👻</span>':""}`;
+    li.innerHTML=`${avatarEl}<span class="player-name">${escHtml(p.name)}</span>${p.is_host?'<span class="player-badge host">Хост</span>':""}${teamBadge}${p.is_invisible?'<span class="player-badge" style="opacity:.6">👻</span>':""}`;
     ul.appendChild(li);
   }
 }
@@ -1535,7 +1581,9 @@ function renderChatMsg(msg){
   box.scrollTop=box.scrollHeight;
   Sounds.chat_msg();
 }
-function escHtml(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function escHtml(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;"); }
+/* Escape a value that is embedded inside a single-quoted JS string in an HTML attribute. */
+function escJs(s){ return String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/"/g,'\\"').replace(/\r?\n/g," ").replace(/</g,"\\x3c"); }
 function deleteChatMsg(ts){ socket.emit("chat_delete_message",{ts}); }
 window.deleteChatMsg=deleteChatMsg;
 
@@ -1603,7 +1651,7 @@ function renderSiBoard(meta, opened=[], myTurn=false, specialCells={}){
       const key=`${r}_${c}`;
       const cell=document.createElement("div"); cell.className="si-cell"+(opened.includes(key)?" si-opened":"");
       if(specialCells[key]) cell.classList.add("si-cheat-special");
-      cell.innerHTML=`<div class="si-cell-cat">${categories[c]||""}</div><div class="si-cell-val">${values[r]||"?"}</div>`;
+      cell.innerHTML=`<div class="si-cell-cat">${escHtml(categories[c]||"")}</div><div class="si-cell-val">${values[r]||"?"}</div>`;
       if(!opened.includes(key)) cell.onclick=()=>{ if(!myTurn){toast("⚠️ Сейчас не ваш ход");return;} socket.emit("svoyaigra_select_cell",{row:r,col:c}); };
       board.appendChild(cell);
     }
@@ -1682,7 +1730,7 @@ function _showQuestion(data,q){
   grid.innerHTML="";
   q.options.forEach((opt,i)=>{
     const btn=document.createElement("button"); btn.className="option-btn"; btn.dataset.idx=i;
-    btn.innerHTML=`<span class="option-letter">${LETTERS[i]}</span>${opt}`;
+    btn.textContent=`${LETTERS[i]}. ${opt}`;
     if(isTester&&cheatSeeAnswer&&data.cheat_correct===i){
       btn.style.cssText="background:rgba(255,215,0,0.15);border-color:#ffd700;color:#ffd700;font-weight:700;box-shadow:0 0 8px rgba(255,215,0,.5)";
     }
@@ -1707,7 +1755,7 @@ function renderTeamBoard(scores,names){
   for(let i=0;i<ids.length;i++){
     const tid=parseInt(ids[i]),sc=(scores||{})[tid]||0,nm=(names||{})[tid]||("Команда "+tid);
     const c=document.createElement("div"); c.style.cssText="display:flex;flex-direction:column;align-items:center;gap:2px;";
-    c.innerHTML=`<span style="font-weight:700;font-size:.8rem;color:${TEAM_COLORS[tid]||'#888'}">${nm}</span><span style="font-family:var(--font-mono);font-size:1.3rem;font-weight:700">${sc}</span>`;
+    c.innerHTML=`<span style="font-weight:700;font-size:.8rem;color:${TEAM_COLORS[tid]||'#888'}">${escHtml(nm)}</span><span style="font-family:var(--font-mono);font-size:1.3rem;font-weight:700">${sc}</span>`;
     tb.appendChild(c);
     if(i<ids.length-1){const vs=document.createElement("div");vs.textContent="VS";vs.style.cssText="color:var(--text-muted);font-weight:800;font-size:.9rem";tb.appendChild(vs);}
   }
@@ -1918,7 +1966,7 @@ function initSocket(){
     if($("question-result-panel"))$("question-result-panel").style.display="";
     if($("result-title")){$("result-title").textContent=myAns?.correct?"✅ Правильно!":"❌ Неверно!";$("result-title").style.color=myAns?.correct?"var(--green)":"var(--red)";}
     const expl=$("result-explanation"); if(expl){if(data.explanation){expl.style.display="";expl.textContent=data.explanation;}else expl.style.display="none";}
-    const qrs=$("qr-scores"); if(qrs){qrs.innerHTML="";if(data.player_answers){for(const[sid,ans] of Object.entries(data.player_answers)){const d2=document.createElement("div");d2.className="qr-score-item "+(ans.correct?"correct-ans":"wrong-ans");const pts=data.scores?.[sid]||0;d2.innerHTML=`<span>${ans.correct?"✅":"❌"}</span><span style="flex:1;font-weight:600">${ans.name}</span><span style="font-family:var(--font-mono)">${pts}п.</span>`;qrs.appendChild(d2);}}}
+    const qrs=$("qr-scores"); if(qrs){qrs.innerHTML="";if(data.player_answers){for(const[sid,ans] of Object.entries(data.player_answers)){const d2=document.createElement("div");d2.className="qr-score-item "+(ans.correct?"correct-ans":"wrong-ans");const pts=data.scores?.[sid]||0;d2.innerHTML=`<span>${ans.correct?"✅":"❌"}</span><span style="flex:1;font-weight:600">${escHtml(ans.name)}</span><span style="font-family:var(--font-mono)">${pts}п.</span>`;qrs.appendChild(d2);}}}
     if(data.scores?.[socket.id]!==undefined){myScore=data.scores[socket.id];if($("g-score"))$("g-score").textContent=myScore;}
     if(data.team_scores&&data.team_names) renderTeamBoard(data.team_scores,data.team_names);
     if(data.new_difficulty&&$("g-diff-badge")) $("g-diff-badge").textContent={easy:"😊 Лёгкая",medium:"🧠 Средняя",hard:"🔥 Сложная"}[data.new_difficulty]||"";
@@ -1929,7 +1977,7 @@ function initSocket(){
   socket.on("interim_results",data=>toast(`📊 Сложность: ${{easy:"Лёгкая",medium:"Средняя",hard:"Сложная"}[data.difficulty]||data.difficulty}`));
   socket.on("reaction_received",data=>{ const el=document.createElement("div");el.className="reaction-float";el.style.left=(20+Math.random()*60)+"%";el.style.bottom="80px";el.innerHTML=data.emoji;$("reactions-overlay")?.appendChild(el);setTimeout(()=>el.remove(),2000); });
 
-  socket.on("cheat_ack",data=>{ const m={infinite_lives:"♾️",invisible:"👻",reset_player:"🗑",rename:"✏️",reset_global_stats:"🗑 БД",presentation_mode:"📺",skip_question:"⏭️",set_lives:"❤️",add_score_all:"💰"}; toast(`${m[data.feature]||"✅"} ${data.enabled!==undefined?(data.enabled?"вкл":"выкл"):(data.ok?"ок":"ошибка")}`); });
+  socket.on("cheat_ack",data=>{ const m={infinite_lives:"♾️",invisible:"👻",invisibility:"👻",reset_player:"🗑",rename:"✏️",reset_global_stats:"🗑 БД",presentation_mode:"📺",skip_question:"⏭️",set_lives:"❤️",add_score_all:"💰",fill_answer:"✅",reveal_answer:"👁️",clear_chat:"🧹",reset_answers:"🔁",set_difficulty:"🎚️",godmode:"🛡️",teleport:"🔀"}; toast(`${m[data.feature]||"✅"} ${data.enabled!==undefined?(data.enabled?"вкл":"выкл"):(data.ok?"ок":"ошибка")}`); });
   socket.on("cheat_player_reset",data=>toast(`🗑 Очки ${data.name} сброшены`));
   socket.on("cheat_score_updated",data=>{ if(data.sid===socket.id){myScore=data.score;if($("g-score"))$("g-score").textContent=myScore;} });
   socket.on("lives_restored",data=>{ toast(`❤️ ${data.name}: ${data.lives} жизней`); });
